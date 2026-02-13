@@ -17,8 +17,8 @@ use Time::HiRes qw(gettimeofday);
 
 use Proc::ProcessTable;
 
-use threads;
-use threads::shared;
+use IO::Select;
+use POSIX ":sys_wait_h";
 
 use Loadbars::Config;
 use Loadbars::Constants;
@@ -76,34 +76,40 @@ sub cpu_parse_line ($) {
 }
 
 sub threads_terminate_pids (@) {
-    my @threads = @_;
+    my @processes = @_;
 
     display_info 'Terminating sub-processes, hasta la vista!';
-    $_->kill('TERM') for @threads;
     display_info_no_nl 'Terminating PIDs';
-    for my $pid ( keys %PIDS ) {
-        my $proc_table = Proc::ProcessTable->new();
-        for my $proc ( @{ $proc_table->table() } ) {
-            if ( $proc->ppid == $pid ) {
-                print $proc->pid . ' ';
-                kill 'TERM', $proc->pid if $proc->ppid == $pid;
-            }
-        }
 
-        print $pid . ' ';
+    # Terminate all child processes
+    for my $proc (@processes) {
+        my $pid = $proc->{pid};
+        print "$pid ";
         kill 'TERM', $pid;
 
-        #$_->join() for @threads;
+        # Close the reader pipe
+        close $proc->{reader} if $proc->{reader};
+    }
+
+    # Wait for all child processes to exit
+    for my $proc (@processes) {
+        waitpid($proc->{pid}, 0);
     }
 
     say '';
-
     display_info 'Terminating done. I\'ll be back!';
 }
 
-sub threads_stats ($;$) {
-    my ( $host, $user ) = @_;
+sub threads_stats ($;$$) {
+    my ( $host, $user, $pipe ) = @_;
     $user = defined $user ? "-l $user" : '';
+
+    # Helper function to write data to pipe with protocol
+    my $write_data = sub {
+        my ($type, $key, $value) = @_;
+        return unless defined $pipe;
+        print $pipe "$type:$key=$value\n";
+    };
 
     my ( $sigusr1, $sigterm ) = ( 0, 0 );
     my $interval = Loadbars::Constants->INTERVAL;
@@ -185,21 +191,21 @@ REMOTECODE
       ? "bash -c \"$remotecode\""
       : "ssh $user -o StrictHostKeyChecking=no $C{sshopts} $host \"$remotecode\"";
 
-    my $pid = open my $pipe, "$cmd |" or do {
+    my $ssh_pid = open my $ssh_pipe, "$cmd |" or do {
         say "Warning: $!";
         sleep 1;
         next;
     };
 
-    $PIDS{$pid} = 1;
+    $PIDS{$ssh_pid} = 1;
 
-    # Toggle CPUs
+    # Signal handling for child process
     $SIG{USR1} = sub { $sigusr1 = 1 };
-    $SIG{TERM} = sub { threads->exit(); };
+    $SIG{TERM} = sub { exit 0; };
 
     my $mode = 0;
 
-    while (<$pipe>) {
+    while (<$ssh_pipe>) {
         chomp;
 
         if ( $_ =~ $modeswitch_re ) {
@@ -219,32 +225,32 @@ REMOTECODE
         }
 
         if ( $mode == 0 ) {
-            $AVGSTATS{$host}     = $_;
-            $AVGSTATS_HAS{$host} = 1;
+            $write_data->('AVG', $host, $_);
+            $write_data->('AVGHAS', $host, 1);
         }
         elsif ( $mode == 1 ) {
             if ( 0 == index $_, $cpustring ) {
                 my ( $name, $load ) = cpu_parse_line $_;
-                $CPUSTATS{"$host;$name"} = join ';',
+                my $value = join ';',
                   map  { $_ . '=' . $load->{$_} }
                   grep { defined $load->{$_} } keys %$load;
+                $write_data->('CPU', "$host;$name", $value);
             }
         }
         elsif ( $mode == 2 ) {
             for my $meminfo (@meminfo) {
                 if ( $_ =~ $meminfo->[1] ) {
-                    $MEMSTATS{"$host;$meminfo->[0]"} = $1;
-                    $MEMSTATS_HAS{$host} = 1
-                      unless defined $MEMSTATS_HAS{$host};
+                    $write_data->('MEM', "$host;$meminfo->[0]", $1);
+                    $write_data->('MEMHAS', $host, 1);
                 }
             }
         }
         elsif ( $mode == 3 ) {
             my ( $int, @stats ) = split ':', $_;
-            $NETSTATS{"$host;$int"}       = "@stats";
-            $NETSTATS{"$host;$int;stamp"} = Time::HiRes::time();
-            $NETSTATS_INT{$int}  = 1 unless defined $NETSTATS_INT{$int};
-            $NETSTATS_HAS{$host} = 1 unless defined $NETSTATS_HAS{$host};
+            $write_data->('NET', "$host;$int", "@stats");
+            $write_data->('NETTIME', "$host;$int;stamp", Time::HiRes::time());
+            $write_data->('NETINT', $int, 1);
+            $write_data->('NETHAS', $host, 1);
         }
 
         if ($sigusr1) {
@@ -254,7 +260,7 @@ REMOTECODE
         }
     }
 
-    delete $PIDS{$pid};
+    delete $PIDS{$ssh_pid};
 
     return undef;
 }
@@ -387,8 +393,98 @@ sub sdl_draw_background ($$) {
 }
 
 sub threads_create (@) {
-    return map { $_->detach(); $_ }
-      map { threads->create( 'threads_stats', split ':' ) } @_;
+    my @processes;
+
+    for my $host_spec (@_) {
+        my ($host, $user) = split ':', $host_spec;
+
+        # Create a pipe for child->parent communication
+        pipe(my $reader, my $writer) or die "Cannot create pipe: $!";
+
+        my $pid = fork();
+        die "Cannot fork: $!" unless defined $pid;
+
+        if ($pid == 0) {
+            # Child process
+            close $reader;
+
+            # Make writer unbuffered
+            my $old_fh = select($writer);
+            $| = 1;
+            select($old_fh);
+
+            # Run stats collection and write to pipe
+            threads_stats($host, $user, $writer);
+
+            close $writer;
+            exit 0;
+        }
+
+        # Parent process
+        close $writer;
+
+        # Store process info: {pid, reader, host}
+        push @processes, {
+            pid => $pid,
+            reader => $reader,
+            host => $host,
+        };
+
+        $PIDS{$pid} = 1;
+    }
+
+    return @processes;
+}
+
+sub read_from_processes (@) {
+    my @processes = @_;
+    return unless @processes;
+
+    # Create IO::Select object for non-blocking reads
+    my @readers = map { $_->{reader} } @processes;
+    my $select = IO::Select->new(@readers);
+
+    # Read from all ready pipes with timeout of 0.001 seconds
+    my @ready = $select->can_read(0.001);
+
+    for my $fh (@ready) {
+        while (my $line = <$fh>) {
+            chomp $line;
+
+            # Parse protocol: TYPE:KEY=VALUE
+            if ($line =~ /^([A-Z]+):(.+)=(.*)$/) {
+                my ($type, $key, $value) = ($1, $2, $3);
+
+                if ($type eq 'AVG') {
+                    $AVGSTATS{$key} = $value;
+                }
+                elsif ($type eq 'AVGHAS') {
+                    $AVGSTATS_HAS{$key} = $value;
+                }
+                elsif ($type eq 'CPU') {
+                    $CPUSTATS{$key} = $value;
+                }
+                elsif ($type eq 'MEM') {
+                    $MEMSTATS{$key} = $value;
+                }
+                elsif ($type eq 'MEMHAS') {
+                    $MEMSTATS_HAS{$key} = $value;
+                }
+                elsif ($type eq 'NET') {
+                    $NETSTATS{$key} = $value;
+                }
+                elsif ($type eq 'NETTIME') {
+                    $NETSTATS{$key} = $value;
+                }
+                elsif ($type eq 'NETINT') {
+                    $NETSTATS_INT{$key} = $value;
+                }
+                elsif ($type eq 'NETHAS') {
+                    $NETSTATS_HAS{$key} = $value;
+                }
+            }
+        }
+    }
 }
 
 sub set_dimensions ($$) {
@@ -422,6 +518,14 @@ sub loop ($@) {
     my $num_stats = 1;
     $C{width} = $C{barwidth};
 
+    # Give threads a moment to fully initialize before starting SDL
+    # This helps avoid race conditions during SDL initialization
+    sleep 1;
+
+    # Initialize SDL video subsystem in main thread only
+    # This must happen after threads are created to avoid threading issues
+    SDL::init(SDL::SDL_INIT_VIDEO);
+
     my $title = do {
         if ( defined $C{title} ) {
             $C{title};
@@ -432,8 +536,7 @@ sub loop ($@) {
     };
 
     my $app = SDLx::App->new(
-        title      => $title,
-        icon_title => Loadbars::Constants->VERSION,
+        title      => "Loadbars",  # Simple static title to avoid TTF rendering issues
         width      => $C{width},
         height     => $C{height},
         depth      => Loadbars::Constants->COLOR_DEPTH,
@@ -455,10 +558,10 @@ sub loop ($@) {
     my $sdl_redraw_background = 0;
     my $sdl_font_height       = 14;
 
-    my $infotxt : shared       = '';
-    my $quit : shared          = 0;
-    my $resize_window : shared = 0;
-    my %newsize : shared;
+    my $infotxt       = '';
+    my $quit          = 0;
+    my $resize_window = 0;
+    my %newsize;
     my $event = SDL::Event->new();
 
     my ( $t1, $t2 ) = ( Time::HiRes::time(), undef );
@@ -485,7 +588,7 @@ sub loop ($@) {
                 # 1 pressed
                 $C{showcores} = !$C{showcores};
                 cpu_set_showcores_re;
-                $_->kill('USR1') for @threads;
+                kill 'USR1', $_->{pid} for @threads;
                 $sdl_redraw_background = 1;
                 display_info "Toggled CPUs $C{showcores}";
 
@@ -641,6 +744,9 @@ sub loop ($@) {
     };
 
     do {
+        # Read data from child processes
+        read_from_processes(@threads);
+
         my ( $x, $y ) = ( 0, 0 );
 
         # Also substract 1 (each bar is followed by an 1px separator bar)

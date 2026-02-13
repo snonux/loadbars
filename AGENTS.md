@@ -7,7 +7,6 @@ This file helps AI assistants (Cursor, Claude, etc.) work effectively in this re
 **Loadbars** is a real-time server load monitoring tool. It connects to one or more hosts via SSH (or runs locally) and shows CPU, memory, and network usage as vertical colored bars in an SDL window. It does not record or graph history; it shows current state only (like `top` or `vmstat`).
 
 - **Repo:** codeberg.org/snonux/loadbars  
-- **Language:** Go (primary); legacy Perl code remains in `lib/` for reference.  
 - **Display:** SDL2 (go-sdl2). No in-window text/fonts; all bars are drawn with filled rectangles. User feedback (hotkeys, which interface, etc.) is printed to stdout.
 
 ## Tech stack

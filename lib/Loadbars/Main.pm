@@ -60,15 +60,17 @@ sub cpu_parse_line ($) {
     my $line = shift;
     my ( $name, %load );
 
-    ( $name, @load{qw(user nice system idle iowait irq softirq steal guest)} ) =
+    # Modern kernels (2.6.33+) have 10 fields: user nice system idle iowait irq softirq steal guest guest_nice
+    ( $name, @load{qw(user nice system idle iowait irq softirq steal guest guest_nice)} ) =
       split ' ', $line;
 
-    # Not all kernels support this
+    # Not all kernels support these fields
     $load{steal} = 0 unless defined $load{steal};
     $load{guest} = 0 unless defined $load{guest};
+    $load{guest_nice} = 0 unless defined $load{guest_nice};
 
     $load{TOTAL} =
-      sum( @load{qw(user nice system idle iowait irq softirq steal guest)} );
+      sum( @load{qw(user nice system idle iowait irq softirq steal guest guest_nice)} );
 
     return ( $name, \%load );
 }

@@ -25,7 +25,7 @@ our @EXPORT = qw (
 sub say (@) { print "$_\n" for @_; return undef }
 sub newline () { say ''; return undef }
 sub debugsay (@) { say "Loadbars::DEBUG: $_" for @_; return undef }
-sub sum (@) { my $sum = 0; $sum += $_ for @_; return $sum }
+sub sum (@) { my $sum = 0; $sum += $_ // 0 for @_; return $sum }
 sub null ($)    { defined $_[0] ? $_[0] : 0 }
 sub notnull ($) { $_[0] != 0    ? $_[0] : 1 }
 sub error ($) { die shift, "\n" }

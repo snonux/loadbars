@@ -201,7 +201,7 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 			numBars = 1
 		}
 
-		barWidth := (winW / int32(numBars)) - 1
+		barWidth := winW / int32(numBars)
 		if barWidth < 1 {
 			barWidth = 1
 		}
@@ -367,7 +367,7 @@ func normalizePcts9(s *[9]float64) {
 // drawCPUBarFromPcts draws one CPU bar from 9 smoothed segment percentages. If s is nil, advances x only.
 // When extended is true and peakPct > 0, draws a 1px peak line (max system+user over history).
 func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[9]float64, barW int32, x *int32, winH int32, extended bool, peakPct float64) {
-	defer func() { *x += barW + 1 }()
+	defer func() { *x += barW }()
 	// Clear this slot so we never leave previous (e.g. mem/net) content visible
 	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
 	renderer.FillRect(&sdl.Rect{X: *x, Y: 0, W: barW, H: winH})
@@ -416,7 +416,7 @@ func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[9]float64, barW int32, x *in
 
 // drawMemBarSmoothed blends mem stats toward target and draws one memory bar (RAM left, Swap right).
 func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *struct{ ramUsed, swapUsed float64 }, factor float64, barW int32, x *int32, winH int32) {
-	defer func() { *x += barW + 1 }()
+	defer func() { *x += barW }()
 	// Clear this slot so we never leave previous (e.g. CPU/net) content visible
 	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
 	renderer.FillRect(&sdl.Rect{X: *x, Y: 0, W: barW, H: winH})
@@ -554,7 +554,7 @@ func chooseNetIface(h *stats.HostStats, cfg *config.Config, host string, netIntI
 }
 
 func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.Config, smoothed *struct{ rxPct, txPct float64 }, prev stats.NetStamp, netIntIndex map[string]int, host string, factor float64, barW int32, x *int32, winH int32) stats.NetStamp {
-	defer func() { *x += barW + 1 }()
+	defer func() { *x += barW }()
 	// Clear this slot so we never leave previous (e.g. CPU/mem) content visible
 	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
 	renderer.FillRect(&sdl.Rect{X: *x, Y: 0, W: barW, H: winH})

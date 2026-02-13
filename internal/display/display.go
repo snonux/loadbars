@@ -87,10 +87,15 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 				case sdl.K_1:
 					showCores = !showCores
 					redrawBg = true
+					fmt.Println("==> Toggled show cores:", showCores)
 				case sdl.K_2:
 					showMem = !showMem
+					redrawBg = true
+					fmt.Println("==> Toggled show mem:", showMem)
 				case sdl.K_3:
 					showNet = !showNet
+					redrawBg = true
+					fmt.Println("==> Toggled show net:", showNet)
 				case sdl.K_e:
 					extended = !extended
 					redrawBg = true
@@ -141,18 +146,24 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 		}
 
 		snap := src.Snapshot()
-		numStats := len(snap)
-		if cfg.ShowMem {
-			numStats += len(snap)
+		// Count total CPU bars we will draw (so width is shared across all bars)
+		numBars := 0
+		for _, host := range sortedHosts(snap) {
+			if h := snap[host]; h != nil {
+				numBars += len(sortedCPUNames(h.CPU, showCores))
+			}
 		}
-		if cfg.ShowNet {
-			numStats += len(snap)
+		if showMem {
+			numBars += len(snap)
 		}
-		if numStats == 0 {
-			numStats = 1
+		if showNet {
+			numBars += len(snap)
+		}
+		if numBars == 0 {
+			numBars = 1
 		}
 
-		barWidth := (winW / int32(numStats)) - 1
+		barWidth := (winW / int32(numBars)) - 1
 		if barWidth < 1 {
 			barWidth = 1
 		}
@@ -229,15 +240,15 @@ func drawCPUBar(renderer *sdl.Renderer, cur, prev collector.CPULine, barW int32,
 	if scale <= 0 {
 		return
 	}
-	userPct := int((cur.User - prev.User) / int64(scale))
-	nicePct := int((cur.Nice - prev.Nice) / int64(scale))
-	sysPct := int((cur.System - prev.System) / int64(scale))
-	idlePct := int((cur.Idle - prev.Idle) / int64(scale))
-	iowaitPct := int((cur.Iowait - prev.Iowait) / int64(scale))
-	irqPct := int((cur.IRQ - prev.IRQ) / int64(scale))
-	softirqPct := int((cur.SoftIRQ - prev.SoftIRQ) / int64(scale))
-	guestPct := int((cur.Guest - prev.Guest) / int64(scale))
-	stealPct := int((cur.Steal - prev.Steal) / int64(scale))
+	userPct := int(float64(cur.User-prev.User) / scale)
+	nicePct := int(float64(cur.Nice-prev.Nice) / scale)
+	sysPct := int(float64(cur.System-prev.System) / scale)
+	idlePct := int(float64(cur.Idle-prev.Idle) / scale)
+	iowaitPct := int(float64(cur.Iowait-prev.Iowait) / scale)
+	irqPct := int(float64(cur.IRQ-prev.IRQ) / scale)
+	softirqPct := int(float64(cur.SoftIRQ-prev.SoftIRQ) / scale)
+	guestPct := int(float64(cur.Guest-prev.Guest) / scale)
+	stealPct := int(float64(cur.Steal-prev.Steal) / scale)
 
 	norm := func(v int) int {
 		if v < 0 {

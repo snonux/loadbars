@@ -64,10 +64,8 @@ func Run(ctx context.Context, host string, cfg *config.Config, store StatsStore,
 	}
 
 	mode := ""
+	// Always collect all CPU lines (cpu, cpu0, cpu1, ...) so display can toggle per-core view with key 1
 	cpustring := "cpu"
-	if !cfg.ShowCores {
-		cpustring = "cpu "
-	}
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():

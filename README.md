@@ -1,5 +1,7 @@
 # loadbars - A small and humble tool to observe server loads
 
+![Loadbars](loadbars.png)
+
 ## Synopsis
 
 ```

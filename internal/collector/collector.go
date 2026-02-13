@@ -2,9 +2,9 @@ package collector
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -20,13 +20,16 @@ type StatsStore interface {
 	SetNet(host, iface string, net NetLine, stamp float64)
 }
 
-// Run starts a collector for one host: runs the remote (or local) script and parses the stream into store.
+// Run starts a collector for one host: runs the embedded remote script (local or over SSH) and parses the stream into store.
 // Host may be "host" or "host:user". It runs until ctx is cancelled or the command exits.
-func Run(ctx context.Context, host string, cfg *config.Config, store StatsStore, scriptPath string) error {
+// The script is embedded in the binary; no external script file is required.
+func Run(ctx context.Context, host string, cfg *config.Config, store StatsStore) error {
 	hostKey, user := splitHostUser(host)
+	script := bytes.NewReader(RemoteScript)
 	var scanner *bufio.Scanner
 	if isLocal(hostKey) {
-		cmd := exec.CommandContext(ctx, "bash", scriptPath)
+		cmd := exec.CommandContext(ctx, "bash", "-s")
+		cmd.Stdin = script
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			return fmt.Errorf("%s: %w", hostKey, err)
@@ -46,12 +49,7 @@ func Run(ctx context.Context, host string, cfg *config.Config, store StatsStore,
 		}
 		args = append(args, hostKey, "bash -s")
 		cmd := exec.CommandContext(ctx, "ssh", args...)
-		scriptFile, err := os.Open(scriptPath)
-		if err != nil {
-			return fmt.Errorf("%s: open script: %w", hostKey, err)
-		}
-		defer scriptFile.Close()
-		cmd.Stdin = scriptFile
+		cmd.Stdin = script
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			return fmt.Errorf("%s: %w", hostKey, err)
@@ -123,5 +121,3 @@ func splitHostUser(host string) (h, u string) {
 func isLocal(h string) bool {
 	return h == "localhost" || h == "127.0.0.1"
 }
-
-

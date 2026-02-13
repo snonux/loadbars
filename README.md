@@ -49,16 +49,10 @@ mage build
 ./loadbars --hosts localhost
 ```
 
-Install system-wide:
+Install to GOPATH/bin (e.g. ~/go/bin):
 
 ```bash
-sudo mage install
-```
-
-Uninstall:
-
-```bash
-sudo mage uninstall
+mage install
 ```
 
 Run tests:
@@ -88,7 +82,7 @@ Or install the latest version from the repository:
 go install codeberg.org/snonux/loadbars/cmd/loadbars@latest
 ```
 
-Remote hosts need no Go: the binary pipes `scripts/loadbars-remote.sh` over SSH.
+Remote hosts need no Go: the binary embeds the remote script and pipes it to `bash -s` locally or over SSH. Only the single binary needs to be installed.
 
 ## Installation
 

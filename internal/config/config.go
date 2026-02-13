@@ -39,13 +39,13 @@ func Default() Config {
 		CPUAverage: 10,
 		Extended:   false,
 		HasAgent:   false,
-		Height:    150,
-		MaxWidth:  1900,
+		Height:     150,
+		MaxWidth:   1900,
 		NetAverage: 15,
-		NetLink:   "gbit",
-		ShowCores: false,
-		ShowMem:   false,
-		ShowNet:   false,
+		NetLink:    "gbit",
+		ShowCores:  false,
+		ShowMem:    false,
+		ShowNet:    false,
 	}
 }
 
@@ -73,6 +73,31 @@ func (c *Config) Load() error {
 	}
 	defer f.Close()
 	return c.parseReader(f)
+}
+
+// Write saves the current config to the config file (excluding title).
+func (c *Config) Write() error {
+	path, err := ConfFilePath()
+	if err != nil {
+		return err
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create config: %w", err)
+	}
+	defer f.Close()
+	return c.writeTo(f)
+}
+
+// GetClusterHosts resolves a cluster name from /etc/clusters into a list of hosts.
+func GetClusterHosts(cluster string) ([]string, error) {
+	return GetClusterHostsFromFile(cluster, constants.CSSHConfFile)
+}
+
+// GetClusterHostsFromFile resolves a cluster from a clusters file (for testing or custom path).
+// Supports recursive cluster references with cycle detection.
+func GetClusterHostsFromFile(cluster, path string) ([]string, error) {
+	return getClusterHostsRec(cluster, path, 1, nil)
 }
 
 func (c *Config) parseReader(f *os.File) error {
@@ -155,20 +180,6 @@ func parseBool(s string) bool {
 	return s == "1" || s == "true" || s == "yes"
 }
 
-// Write saves the current config to the config file (excluding title).
-func (c *Config) Write() error {
-	path, err := ConfFilePath()
-	if err != nil {
-		return err
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("create config: %w", err)
-	}
-	defer f.Close()
-	return c.writeTo(f)
-}
-
 func (c *Config) writeTo(f *os.File) error {
 	w := bufio.NewWriter(f)
 	writeInt := func(key string, v int) { fmt.Fprintf(w, "%s=%d\n", key, v) }
@@ -195,17 +206,6 @@ func (c *Config) writeTo(f *os.File) error {
 	writeStr("sshopts", c.SSHOpts)
 	writeStr("cluster", c.Cluster)
 	return w.Flush()
-}
-
-// GetClusterHosts resolves a cluster name from /etc/clusters into a list of hosts.
-func GetClusterHosts(cluster string) ([]string, error) {
-	return GetClusterHostsFromFile(cluster, constants.CSSHConfFile)
-}
-
-// GetClusterHostsFromFile resolves a cluster from a clusters file (for testing or custom path).
-// Supports recursive cluster references with cycle detection.
-func GetClusterHostsFromFile(cluster, path string) ([]string, error) {
-	return getClusterHostsRec(cluster, path, 1, nil)
 }
 
 func getClusterHostsRec(cluster, path string, depth int, seen map[string]bool) ([]string, error) {

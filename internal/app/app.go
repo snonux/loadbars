@@ -15,7 +15,6 @@ func Run(cfg *config.Config) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	scriptPath := ScriptPath()
 	store := NewStore()
 
 	var wg sync.WaitGroup
@@ -24,7 +23,7 @@ func Run(cfg *config.Config) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = collector.Run(ctx, h, cfg, store, scriptPath)
+			_ = collector.Run(ctx, h, cfg, store)
 		}()
 	}
 

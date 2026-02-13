@@ -106,6 +106,7 @@ func normalizeHost(h string) string {
 	return h
 }
 
+// printUsage prints usage and options to stderr.
 func printUsage() {
 	fmt.Fprintf(os.Stderr, `Loadbars %s - real-time server load monitoring
 

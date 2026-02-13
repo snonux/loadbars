@@ -6,12 +6,12 @@ import (
 
 func TestParseCPULine(t *testing.T) {
 	tests := []struct {
-		name    string
-		line    string
-		wantName string
-		wantUser int64
+		name      string
+		line      string
+		wantName  string
+		wantUser  int64
 		wantTotal int64
-		wantErr bool
+		wantErr   bool
 	}{
 		{"normal", "cpu 100 0 50 200 0 0 0 0 0 0", "cpu", 100, 350, false},
 		{"cpu0", "cpu0 10 0 5 80 0 0 0 0 0 0", "cpu0", 10, 95, false},

@@ -17,6 +17,51 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
+const smoothFactor = 0.12 // blend toward target each frame; lower = smoother
+
+// runState holds mutable state across the display loop (hotkeys, window size, smoothed data).
+type runState struct {
+	showCores       bool
+	showMem         bool
+	showNet         bool
+	extended        bool
+	winW            int32
+	winH            int32
+	lastNumBars     int
+	lastWinW        int32
+	lastWinH        int32
+	prevCPU         map[string]collector.CPULine
+	smoothedCPU     map[string]*[9]float64
+	smoothedMem     map[string]*struct{ ramUsed, swapUsed float64 }
+	smoothedNet     map[string]*struct{ rxPct, txPct float64 }
+	prevNet         map[string]stats.NetStamp
+	netIntIndex     map[string]int
+	cycleNetNext    bool
+	printNetInfoOnce bool
+	peakHistory     map[string][]float64
+}
+
+// newRunState builds initial run state from config.
+func newRunState(cfg *config.Config, winW, winH int32) *runState {
+	return &runState{
+		showCores:        cfg.ShowCores,
+		showMem:          cfg.ShowMem,
+		showNet:          cfg.ShowNet,
+		extended:         cfg.Extended,
+		winW:             winW,
+		winH:             winH,
+		lastNumBars:      -1,
+		prevCPU:          make(map[string]collector.CPULine),
+		smoothedCPU:      make(map[string]*[9]float64),
+		smoothedMem:      make(map[string]*struct{ ramUsed, swapUsed float64 }),
+		smoothedNet:      make(map[string]*struct{ rxPct, txPct float64 }),
+		prevNet:          make(map[string]stats.NetStamp),
+		netIntIndex:      make(map[string]int),
+		printNetInfoOnce: cfg.ShowNet,
+		peakHistory:      make(map[string][]float64),
+	}
+}
+
 // Run runs the SDL display loop until ctx is cancelled or user presses 'q'.
 func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
@@ -24,55 +69,25 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 	}
 	defer sdl.Quit()
 
-	width := cfg.BarWidth
-	if width < 1 {
-		width = 1
-	}
-	if width > cfg.MaxWidth {
-		width = cfg.MaxWidth
-	}
+	const minWindowWidth = 800
+	width := clampInt(cfg.BarWidth, minWindowWidth, cfg.MaxWidth)
 	height := cfg.Height
 	if height < 1 {
 		height = 1
 	}
-
 	title := cfg.Title
 	if title == "" {
 		title = "Loadbars " + version.Version + " (press h for help on stdout)"
 	}
-
 	window, renderer, err := sdl.CreateWindowAndRenderer(int32(width), int32(height), sdl.WINDOW_RESIZABLE)
 	if err != nil {
 		return fmt.Errorf("create window: %w", err)
 	}
 	defer window.Destroy()
 	defer renderer.Destroy()
-
 	window.SetTitle(title)
 
-	// Mutable copy of config for hotkey toggles (only what display needs)
-	showCores := cfg.ShowCores
-	showMem := cfg.ShowMem
-	showNet := cfg.ShowNet
-	extended := cfg.Extended
-	winW, winH := int32(width), int32(height)
-
-	// Previous CPU state for delta (key = host;cpuName)
-	prevCPU := make(map[string]collector.CPULine)
-	// Smoothed values for transitions (blend toward target each frame)
-	const smoothFactor = 0.12 // lower = smoother, less flicker from noisy samples
-	smoothedCPU := make(map[string]*[9]float64)
-	smoothedMem := make(map[string]*struct{ ramUsed, swapUsed float64 })
-	smoothedNet := make(map[string]*struct{ rxPct, txPct float64 })
-	prevNet := make(map[string]stats.NetStamp)
-	netIntIndex := make(map[string]int) // for cycling interface per host
-	var cycleNetNext bool
-	var printNetInfoOnce bool = showNet // print chosen interface when net view is on (once at start or after toggling on)
-	// Peak history for extended mode: per CPU bar key, ring of (system+user) %
-	peakHistory := make(map[string][]float64)
-
-	lastNumBars := -1
-	lastWinW, lastWinH := int32(0), int32(0)
+	state := newRunState(cfg, int32(width), int32(height))
 	ticker := time.NewTicker(time.Duration(constants.IntervalSDL * float64(time.Second)))
 	defer ticker.Stop()
 
@@ -82,211 +97,246 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 			return ctx.Err()
 		default:
 		}
-
-		// Poll all pending events
-		for e := sdl.PollEvent(); e != nil; e = sdl.PollEvent() {
-			switch ev := e.(type) {
-			case *sdl.QuitEvent:
-				return nil
-			case *sdl.KeyboardEvent:
-				if ev.Type != sdl.KEYDOWN || ev.Repeat != 0 {
-					continue
-				}
-				sym := ev.Keysym.Sym
-				switch sym {
-				case sdl.K_q:
-					return nil
-				case sdl.K_1:
-					showCores = !showCores
-					fmt.Println("==> Toggled show cores:", showCores)
-				case sdl.K_2:
-					showMem = !showMem
-					fmt.Println("==> Toggled show mem:", showMem)
-				case sdl.K_3:
-					showNet = !showNet
-					fmt.Println("==> Toggled show net:", showNet)
-					if showNet {
-						printNetInfoOnce = true
-					}
-				case sdl.K_e:
-					extended = !extended
-					fmt.Println("==> Toggled extended (peak line):", extended)
-				case sdl.K_a:
-					cfg.CPUAverage++
-					fmt.Println("==> CPU average samples:", cfg.CPUAverage)
-				case sdl.K_y:
-					if cfg.CPUAverage > 1 {
-						cfg.CPUAverage--
-					}
-					fmt.Println("==> CPU average samples:", cfg.CPUAverage)
-				case sdl.K_d:
-					cfg.NetAverage++
-					fmt.Println("==> Net average samples:", cfg.NetAverage)
-				case sdl.K_c:
-					if cfg.NetAverage > 1 {
-						cfg.NetAverage--
-					}
-					fmt.Println("==> Net average samples:", cfg.NetAverage)
-				case sdl.K_h:
-					printHotkeys()
-				case sdl.K_n:
-					cycleNetNext = true
-					if showNet {
-						fmt.Println("==> Cycling to next network interface (per host)")
-					}
-				case sdl.K_w:
-					cfg.ShowCores = showCores
-					cfg.ShowMem = showMem
-					cfg.ShowNet = showNet
-					cfg.Extended = extended
-					if err := cfg.Write(); err != nil {
-						fmt.Fprintf(os.Stderr, "!!! Write config: %v\n", err)
-					} else {
-						fmt.Println("==> Config written to ~/.loadbarsrc")
-					}
-				case sdl.K_LEFT:
-					winW -= 100
-					if winW < 1 {
-						winW = 1
-					}
-					window.SetSize(winW, winH)
-				case sdl.K_RIGHT:
-					winW += 100
-					if winW > int32(cfg.MaxWidth) {
-						winW = int32(cfg.MaxWidth)
-					}
-					window.SetSize(winW, winH)
-				case sdl.K_UP:
-					winH -= 100
-					if winH < 1 {
-						winH = 1
-					}
-					window.SetSize(winW, winH)
-				case sdl.K_DOWN:
-					winH += 100
-					window.SetSize(winW, winH)
-				}
-			case *sdl.WindowEvent:
-				if ev.Event == sdl.WINDOWEVENT_RESIZED {
-					winW, winH = ev.Data1, ev.Data2
-				}
-			}
+		if handleEvents(window, cfg, state) {
+			return nil
 		}
-
-		snap := src.Snapshot()
-		if cycleNetNext {
-			for _, host := range sortedHosts(snap) {
-				netIntIndex[host]++
-			}
-			cycleNetNext = false
-		}
-		// One-time: print which interface is used for net stats and how to configure
-		if printNetInfoOnce && showNet {
-			printNetInfoOnce = false
-			printNetInterfaceHelp(snap, cfg, netIntIndex)
-		}
-		// Count total bars we will draw (only non-nil hosts) so layout matches draw order
-		numBars := 0
-		for _, host := range sortedHosts(snap) {
-			if h := snap[host]; h != nil {
-				numBars += len(sortedCPUNames(h.CPU, showCores))
-				if showMem {
-					numBars++
-				}
-				if showNet {
-					numBars++
-				}
-			}
-		}
-		if numBars == 0 {
-			numBars = 1
-		}
-
-		barWidth := winW / int32(numBars)
-		if barWidth < 1 {
-			barWidth = 1
-		}
-
-		// Clear only when layout changes (bar count or window size) to avoid full-screen flicker
-		if numBars != lastNumBars || winW != lastWinW || winH != lastWinH {
-			renderer.SetDrawColor(0, 0, 0, 255)
-			renderer.Clear()
-			lastNumBars = numBars
-			lastWinW, lastWinH = winW, winH
-		}
-
-		x := int32(0)
-		hosts := sortedHosts(snap)
-		for _, host := range hosts {
-			h := snap[host]
-			if h == nil {
-				continue
-			}
-			// Draw CPU bars for this host (aggregate or per-core), with smoothing
-			cpuNames := sortedCPUNames(h.CPU, showCores)
-			for _, name := range cpuNames {
-				key := host + ";" + name
-				cur := h.CPU[name]
-				prev := prevCPU[key]
-				prevCPU[key] = cur
-				target, ok := cpuBarTargetPcts(cur, prev)
-				s := smoothedCPU[key]
-				if s == nil {
-					s = &[9]float64{}
-					smoothedCPU[key] = s
-					if ok {
-						*s = target
-					}
-				} else if ok {
-					for i := 0; i < 9; i++ {
-						(*s)[i] += (target[i] - (*s)[i]) * smoothFactor
-					}
-					normalizePcts9(s)
-				}
-				// Peak line (extended): max of (system+user) over last CPUAverage samples
-				var peakPct float64
-				if extended && s != nil {
-					userSys := (*s)[0] + (*s)[1]
-					hist := peakHistory[key]
-					hist = append(hist, userSys)
-					n := cfg.CPUAverage
-					if n < 1 {
-						n = 1
-					}
-					for len(hist) > n {
-						hist = hist[1:]
-					}
-					peakHistory[key] = hist
-					for _, v := range hist {
-						if v > peakPct {
-							peakPct = v
-						}
-					}
-				}
-				// Always draw (smoothed or last state) so we never leave a blank bar and cause flicker
-				drawCPUBarFromPcts(renderer, s, barWidth, &x, winH, extended, peakPct)
-			}
-			// Draw memory bar(s) for this host when showMem, with smoothing
-			if showMem {
-				if smoothedMem[host] == nil {
-					smoothedMem[host] = &struct{ ramUsed, swapUsed float64 }{}
-				}
-				drawMemBarSmoothed(renderer, h, smoothedMem[host], smoothFactor, barWidth, &x, winH)
-			}
-			// Draw network bar(s) for this host when showNet
-			if showNet {
-				if smoothedNet[host] == nil {
-					smoothedNet[host] = &struct{ rxPct, txPct float64 }{}
-				}
-				prevNet[host] = drawNetBarSmoothed(renderer, h, cfg, smoothedNet[host], prevNet[host], netIntIndex, host, smoothFactor, barWidth, &x, winH)
-			}
-		}
-
+		drawFrame(renderer, src, cfg, state)
 		renderer.Present()
 		sdl.Delay(10)
-
 		<-ticker.C
 	}
+}
+
+func clampInt(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+// handleEvents processes all pending SDL events and updates state. Returns true if the user quit.
+func handleEvents(window *sdl.Window, cfg *config.Config, state *runState) bool {
+	for e := sdl.PollEvent(); e != nil; e = sdl.PollEvent() {
+		switch ev := e.(type) {
+		case *sdl.QuitEvent:
+			return true
+		case *sdl.KeyboardEvent:
+			if ev.Type != sdl.KEYDOWN || ev.Repeat != 0 {
+				continue
+			}
+			if handleKey(ev.Keysym.Sym, window, cfg, state) {
+				return true
+			}
+		case *sdl.WindowEvent:
+			if ev.Event == sdl.WINDOWEVENT_RESIZED {
+				state.winW, state.winH = ev.Data1, ev.Data2
+			}
+		}
+	}
+	return false
+}
+
+// handleKey handles one key press; returns true to quit.
+func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *runState) bool {
+	switch sym {
+	case sdl.K_q:
+		return true
+	case sdl.K_1:
+		state.showCores = !state.showCores
+		fmt.Println("==> Toggled show cores:", state.showCores)
+	case sdl.K_2:
+		state.showMem = !state.showMem
+		fmt.Println("==> Toggled show mem:", state.showMem)
+	case sdl.K_3:
+		state.showNet = !state.showNet
+		fmt.Println("==> Toggled show net:", state.showNet)
+		if state.showNet {
+			state.printNetInfoOnce = true
+		}
+	case sdl.K_e:
+		state.extended = !state.extended
+		fmt.Println("==> Toggled extended (peak line):", state.extended)
+	case sdl.K_a:
+		cfg.CPUAverage++
+		fmt.Println("==> CPU average samples:", cfg.CPUAverage)
+	case sdl.K_y:
+		if cfg.CPUAverage > 1 {
+			cfg.CPUAverage--
+		}
+		fmt.Println("==> CPU average samples:", cfg.CPUAverage)
+	case sdl.K_d:
+		cfg.NetAverage++
+		fmt.Println("==> Net average samples:", cfg.NetAverage)
+	case sdl.K_c:
+		if cfg.NetAverage > 1 {
+			cfg.NetAverage--
+		}
+		fmt.Println("==> Net average samples:", cfg.NetAverage)
+	case sdl.K_h:
+		printHotkeys()
+	case sdl.K_n:
+		state.cycleNetNext = true
+		if state.showNet {
+			fmt.Println("==> Cycling to next network interface (per host)")
+		}
+	case sdl.K_w:
+		cfg.ShowCores = state.showCores
+		cfg.ShowMem = state.showMem
+		cfg.ShowNet = state.showNet
+		cfg.Extended = state.extended
+		if err := cfg.Write(); err != nil {
+			fmt.Fprintf(os.Stderr, "!!! Write config: %v\n", err)
+		} else {
+			fmt.Println("==> Config written to ~/.loadbarsrc")
+		}
+	case sdl.K_LEFT:
+		state.winW -= 100
+		if state.winW < 1 {
+			state.winW = 1
+		}
+		window.SetSize(state.winW, state.winH)
+	case sdl.K_RIGHT:
+		state.winW += 100
+		if state.winW > int32(cfg.MaxWidth) {
+			state.winW = int32(cfg.MaxWidth)
+		}
+		window.SetSize(state.winW, state.winH)
+	case sdl.K_UP:
+		state.winH -= 100
+		if state.winH < 1 {
+			state.winH = 1
+		}
+		window.SetSize(state.winW, state.winH)
+	case sdl.K_DOWN:
+		state.winH += 100
+		window.SetSize(state.winW, state.winH)
+	}
+	return false
+}
+
+// drawFrame updates state from snapshot, clears if layout changed, and draws all bars.
+func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, state *runState) {
+	snap := src.Snapshot()
+	if state.cycleNetNext {
+		for _, host := range sortedHosts(snap) {
+			state.netIntIndex[host]++
+		}
+		state.cycleNetNext = false
+	}
+	if state.printNetInfoOnce && state.showNet {
+		state.printNetInfoOnce = false
+		printNetInterfaceHelp(snap, cfg, state.netIntIndex)
+	}
+	numBars := countBars(snap, state.showCores, state.showMem, state.showNet)
+	barWidth := state.winW / int32(numBars)
+	if barWidth < 1 {
+		barWidth = 1
+	}
+	if numBars != state.lastNumBars || state.winW != state.lastWinW || state.winH != state.lastWinH {
+		renderer.SetDrawColor(0, 0, 0, 255)
+		renderer.Clear()
+		state.lastNumBars = numBars
+		state.lastWinW, state.lastWinH = state.winW, state.winH
+	}
+	drawBars(renderer, snap, cfg, state, barWidth)
+}
+
+func countBars(snap map[string]*stats.HostStats, showCores, showMem, showNet bool) int {
+	n := 0
+	for _, host := range sortedHosts(snap) {
+		if h := snap[host]; h != nil {
+			n += len(sortedCPUNames(h.CPU, showCores))
+			if showMem {
+				n++
+			}
+			if showNet {
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		n = 1
+	}
+	return n
+}
+
+// drawBars draws CPU, memory, and network bars for all hosts in snap.
+func drawBars(renderer *sdl.Renderer, snap map[string]*stats.HostStats, cfg *config.Config, state *runState, barWidth int32) {
+	x := int32(0)
+	for _, host := range sortedHosts(snap) {
+		h := snap[host]
+		if h == nil {
+			continue
+		}
+		drawHostBars(renderer, h, host, cfg, state, barWidth, &x)
+	}
+}
+
+// drawHostBars draws CPU, mem, and net bars for one host and advances x.
+func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *config.Config, state *runState, barWidth int32, x *int32) {
+	winH := state.winH
+	cpuNames := sortedCPUNames(h.CPU, state.showCores)
+	for _, name := range cpuNames {
+		key := host + ";" + name
+		cur := h.CPU[name]
+		prev := state.prevCPU[key]
+		state.prevCPU[key] = cur
+		target, ok := cpuBarTargetPcts(cur, prev)
+		s := state.smoothedCPU[key]
+		if s == nil {
+			s = &[9]float64{}
+			state.smoothedCPU[key] = s
+			if ok {
+				*s = target
+			}
+		} else if ok {
+			for i := 0; i < 9; i++ {
+				(*s)[i] += (target[i] - (*s)[i]) * smoothFactor
+			}
+			normalizePcts9(s)
+		}
+		peakPct := peakPctForBar(state, key, cfg.CPUAverage, s)
+		drawCPUBarFromPcts(renderer, s, barWidth, x, winH, state.extended, peakPct)
+	}
+	if state.showMem {
+		if state.smoothedMem[host] == nil {
+			state.smoothedMem[host] = &struct{ ramUsed, swapUsed float64 }{}
+		}
+		drawMemBarSmoothed(renderer, h, state.smoothedMem[host], smoothFactor, barWidth, x, winH)
+	}
+	if state.showNet {
+		if state.smoothedNet[host] == nil {
+			state.smoothedNet[host] = &struct{ rxPct, txPct float64 }{}
+		}
+		state.prevNet[host] = drawNetBarSmoothed(renderer, h, cfg, state.smoothedNet[host], state.prevNet[host], state.netIntIndex, host, smoothFactor, barWidth, x, winH)
+	}
+}
+
+func peakPctForBar(state *runState, key string, cpuAvg int, s *[9]float64) float64 {
+	if !state.extended || s == nil {
+		return 0
+	}
+	userSys := (*s)[0] + (*s)[1]
+	hist := state.peakHistory[key]
+	hist = append(hist, userSys)
+	n := cpuAvg
+	if n < 1 {
+		n = 1
+	}
+	for len(hist) > n {
+		hist = hist[1:]
+	}
+	state.peakHistory[key] = hist
+	var max float64
+	for _, v := range hist {
+		if v > max {
+			max = v
+		}
+	}
+	return max
 }
 
 func sortedHosts(snap map[string]*stats.HostStats) []string {
@@ -386,15 +436,15 @@ func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[9]float64, barW int32, x *in
 		renderer.SetDrawColor(r, g, b, 255)
 		renderer.FillRect(&sdl.Rect{X: *x, Y: int32(y), W: barW, H: hh})
 	}
-	fill(constants.Blue.R, constants.Blue.G, constants.Blue.B, (*s)[0])   // system
+	fill(constants.Blue.R, constants.Blue.G, constants.Blue.B, (*s)[0])       // system
 	fill(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, (*s)[1]) // user
-	fill(constants.Green.R, constants.Green.G, constants.Green.B, (*s)[2])   // nice
+	fill(constants.Green.R, constants.Green.G, constants.Green.B, (*s)[2])    // nice
 	fill(constants.Black.R, constants.Black.G, constants.Black.B, (*s)[3])    // idle
 	fill(constants.Purple.R, constants.Purple.G, constants.Purple.B, (*s)[4]) // iowait
-	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[5])   // irq
-	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[6])   // softirq
-	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[7])         // guest
-	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[8])         // steal
+	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[5])    // irq
+	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[6])    // softirq
+	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[7])          // guest
+	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[8])          // steal
 	// Extended: 1px peak line at max (system+user) over history
 	if extended && peakPct > 0 {
 		peakY := winH - int32(peakPct*barH)
@@ -618,7 +668,7 @@ func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.
 		renderer.SetDrawColor(constants.LightGreen.R, constants.LightGreen.G, constants.LightGreen.B, 255)
 		renderer.FillRect(&sdl.Rect{X: *x + halfW, Y: winH - txH, W: halfW, H: txH})
 	}
-	if halfW > 0 && (winH - txH) > 0 {
+	if halfW > 0 && (winH-txH) > 0 {
 		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
 		renderer.FillRect(&sdl.Rect{X: *x + halfW, Y: 0, W: halfW, H: winH - txH})
 	}

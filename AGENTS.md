@@ -15,7 +15,7 @@ This file helps AI assistants (Cursor, Claude, etc.) work effectively in this re
 - **github.com/veandco/go-sdl2** – SDL2 bindings for window and 2D rendering
 - **Build/tasks:** Mage (`mage build`, `mage test`, `mage install`)
 
-Remote hosts do not need Go: the client runs `scripts/loadbars-remote.sh` locally or over SSH (stdin). No agent or extra install on remotes beyond bash and `/proc` (Linux).
+Remote hosts do not need Go: the client embeds the remote script in the binary and runs it via `bash -s` (stdin) locally or over SSH. No separate script file; install only the binary. Remotes need bash and `/proc` (Linux).
 
 ## Layout
 
@@ -23,14 +23,14 @@ Remote hosts do not need Go: the client runs `scripts/loadbars-remote.sh` locall
 cmd/loadbars/          # Entry point: flags, config load, app.Run()
 internal/
   app/                 # App lifecycle, store, wires collector + display
-  collector/           # Runs script (local or ssh), parses M LOADAVG / M MEMSTATS / M NETSTATS / M CPUSTATS
+  collector/           # Runs embedded script (local or ssh via bash -s), parses M LOADAVG / M MEMSTATS / M NETSTATS / M CPUSTATS
   config/              # Config struct, ~/.loadbarsrc load/save, cluster from /etc/clusters
   constants/           # Intervals, colors (RGB), link-speed constants
   display/             # SDL window, event loop, drawing (CPU/mem/net bars, hotkeys)
   stats/               # HostStats, Snapshot, NetStamp; read by display
   version/             # Version string (e.g. "0.8.0") – used in title bar and --version
 scripts/
-  loadbars-remote.sh   # Emits protocol lines for collector (no Perl on remote)
+  loadbars-remote.sh   # Source copy; embedded into binary at build (internal/collector/scriptdata/)
 ```
 
 - **Version:** Set in `internal/version/version.go`. Shown in window title and `--version`.
@@ -42,7 +42,7 @@ scripts/
 |-------------------|----------------------------|
 | `mage build`      | Build `loadbars` binary     |
 | `mage test`       | Run Go tests               |
-| `mage install`    | Install binary + script    |
+| `mage install`    | Copy binary to GOPATH/bin (~/go/bin) |
 | `go build -o loadbars ./cmd/loadbars` | Build without Mage |
 | `./loadbars --hosts localhost` | Run locally (no SSH)  |
 

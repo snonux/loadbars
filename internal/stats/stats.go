@@ -14,9 +14,9 @@ type NetStamp struct {
 // HostStats holds the latest stats for one host (read-only snapshot).
 type HostStats struct {
 	LoadAvg1, LoadAvg5, LoadAvg15 string
-	Mem                            map[string]int64
-	Net                            map[string]NetStamp
-	CPU                            map[string]collector.CPULine
+	Mem                           map[string]int64
+	Net                           map[string]NetStamp
+	CPU                           map[string]collector.CPULine
 }
 
 // Source is the interface the display uses to read current stats.

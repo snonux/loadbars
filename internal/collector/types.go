@@ -2,7 +2,7 @@ package collector
 
 // CPULine is one line of /proc/stat: cpu name + counters (user, nice, system, idle, ...).
 type CPULine struct {
-	Name string
+	Name                                                                    string
 	User, Nice, System, Idle, Iowait, IRQ, SoftIRQ, Steal, Guest, GuestNice int64
 }
 

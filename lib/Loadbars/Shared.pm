@@ -19,24 +19,24 @@ our @EXPORT = qw(
   %I
 );
 
-our %PIDS;
+our %PIDS : shared;
 
-our %CPUSTATS;
-our %AVGSTATS;
-our %AVGSTATS_HAS;
+our %CPUSTATS : shared;
+our %AVGSTATS : shared;
+our %AVGSTATS_HAS : shared;
 
-our %MEMSTATS;
-our %MEMSTATS_HAS;
+our %MEMSTATS : shared;
+our %MEMSTATS_HAS : shared;
 
-our %NETSTATS;
-our %NETSTATS_HAS;
-our %NETSTATS_INT;
+our %NETSTATS : shared;
+our %NETSTATS_HAS : shared;
+our %NETSTATS_INT : shared;
 
 # Global configuration hash
-our %C;
+our %C : shared;
 
 # Global configuration hash for internal settings (not configurable)
-our %I;
+our %I : shared;
 
 # Setting defaults
 %C = (

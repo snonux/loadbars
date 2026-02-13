@@ -72,16 +72,19 @@ func TestParseMemLine(t *testing.T) {
 
 func TestParseNetLine(t *testing.T) {
 	tests := []struct {
-		name    string
-		line    string
+		name      string
+		line      string
 		wantIface string
-		wantB   int64
-		wantTb  int64
-		wantErr bool
+		wantB     int64
+		wantTb    int64
+		wantErr   bool
 	}{
 		{"simple", "eth0:b=1000;tb=2000;p=10;tp=20;e=0;te=0;d=0;td=0", "eth0", 1000, 2000, false},
 		{"with_space", "eth0:b=100;tb=200 p=0;tp=0;e=0;te=0;d=0;td=0", "eth0", 100, 200, false},
 		{"no_colon", "eth0 b=1", "", 0, 0, true},
+		// Linux /proc/net/dev style as emitted by loadbars-remote.sh (iface rx_bytes rx_packets ... tx_bytes ...)
+		{"linux_style", "eth0:b=123456789;tb=987654321;p=1000;tp=2000 e=0;te=0;d=0;td=0", "eth0", 123456789, 987654321, false},
+		{"lo_interface", "lo:b=0;tb=0;p=0;tp=0 e=0;te=0;d=0;td=0", "lo", 0, 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -35,7 +35,7 @@ type Config struct {
 // Default returns a Config with default values.
 func Default() Config {
 	return Config{
-		BarWidth:   20,
+		BarWidth:   1200,
 		CPUAverage: 10,
 		Extended:   false,
 		HasAgent:   false,

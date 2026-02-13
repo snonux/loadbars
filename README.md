@@ -40,14 +40,53 @@ Loadbars is a tool that can be used to observe CPU loads of several remote serve
 
 ## Build and run
 
+### Using Mage (recommended)
+
 Build the binary:
+
+```bash
+mage build
+./loadbars --hosts localhost
+```
+
+Install system-wide:
+
+```bash
+sudo mage install
+```
+
+Uninstall:
+
+```bash
+sudo mage uninstall
+```
+
+Run tests:
+
+```bash
+mage test
+```
+
+### Using Go directly
+
+Build from source:
 
 ```bash
 go build -o loadbars ./cmd/loadbars
 ./loadbars --hosts localhost
 ```
 
-Or use [mage](https://magefile.org): `mage build` (default), `mage test`, `mage install` (set `DESTDIR` for install path), `mage uninstall` / `mage deinstall`.
+Install to $GOPATH/bin:
+
+```bash
+go install ./cmd/loadbars
+```
+
+Or install the latest version from the repository:
+
+```bash
+go install codeberg.org/snonux/loadbars/cmd/loadbars@latest
+```
 
 Remote hosts need no Go: the binary pipes `scripts/loadbars-remote.sh` over SSH.
 
@@ -91,6 +130,28 @@ Loadbars requires SSH public/private key authentication. Make sure:
 
 ## Info
 
+### Hotkeys
+
+Press these keys while loadbars is running (see also `h` for a short list on stdout):
+
+| Key | Action |
+|-----|--------|
+| **1** | Toggle CPU cores (one bar per core vs one aggregate bar per host) |
+| **2** | Toggle memory bars (RAM left, Swap right per host) |
+| **3** | Toggle network bars (RX/TX per host); stdout shows which interface is used |
+| **e** | Toggle extended display (1px peak line on CPU bars: max system+user over last samples) |
+| **h** | Print hotkey list to stdout |
+| **n** | Cycle to next network interface (per host); only when net bars are shown |
+| **q** | Quit |
+| **w** | Write current settings to ~/.loadbarsrc |
+| **a** | Increase CPU average samples (affects extended peak history length) |
+| **y** | Decrease CPU average samples (min 1) |
+| **d** | Increase net average samples |
+| **c** | Decrease net average samples (min 1) |
+| **f** | Link scale up (net utilization reference) |
+| **v** | Link scale down (net utilization reference) |
+| **Arrow keys** | Resize window (left/right: width, up/down: height) |
+
 ### CPU stuff
 
 - `st` = Steal in % [see man proc] (extended), Color: Red
@@ -118,12 +179,22 @@ Loadbars requires SSH public/private key authentication. Make sure:
 
 When network bar is red: The interface does not exist on the specific remote host.
 
+**Choosing the network interface:** By default loadbars uses the first non-loopback interface (e.g. `eth0`, `enp0s3`). If stats never change, you may be watching the wrong interface (e.g. `docker0` with little traffic). Set the interface explicitly:
+
+- In **~/.loadbarsrc**: `netint=eth0` (use the name from `/proc/net/dev` or `ip link`)
+- On the command line: `loadbars --netint eth0 --hosts localhost`
+- In-app: press **3** to show net bars (stdout will print which interface is used), then **n** to cycle to the next interface.
+
+**Link speed** (`netlink`): Used to compute utilization %. Default is `gbit`. Set e.g. `netlink=100mbit` or `netlink=10gbit` in ~/.loadbarsrc or `--netlink 100mbit`.
+
 #### Config file support
 
 Loadbars tries to read ~/.loadbarsrc and it's possible to configure any option you find in --help but without leading '--'. For comments just use the '#' sign. Sample config:
 
 ```
-showcores=1 # Always show cores on startup
+showcores=1   # Always show cores on startup
+netint=eth0   # Interface for network bars (optional)
+netlink=gbit  # Link speed for utilization % (optional)
 ```
 
 will always show all CPU cores. If you press the 'w' hotkey during program execution your config file will be overwritten using the current settings.

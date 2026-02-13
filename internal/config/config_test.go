@@ -14,10 +14,10 @@ func TestConfig_parseReader(t *testing.T) {
 		wantBar int
 		wantExt bool
 	}{
-		{"empty", "", 20, false},
+		{"empty", "", 1200, false},
 		{"barwidth", "barwidth=42\n", 42, false},
-		{"extended_1", "extended=1\n", 20, true},
-		{"extended_true", "extended=true\n", 20, true},
+		{"extended_1", "extended=1\n", 1200, true},
+		{"extended_true", "extended=true\n", 1200, true},
 		{"comments", "# foo\nbarwidth=10\n# bar\n", 10, false},
 		{"unknown_key", "barwidth=5\nunknown=ignored\n", 5, false},
 		{"multiple", "barwidth=30\nextended=1\nshowcores=1\n", 30, true},

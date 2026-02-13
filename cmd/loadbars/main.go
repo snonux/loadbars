@@ -114,15 +114,20 @@ Usage: loadbars [HOSTS...] [OPTIONS]
 Options:
   --hosts <list>     Comma-separated hosts (optional user@host)
   --cluster <name>   Cluster from %s
-  --barwidth <n>      Bar width (default 20)
-  --height <n>        Window height (default 150)
-  --showcores         Show per-CPU bars
-  --showmem           Show memory bars
-  --shownet           Show network bars
-  --extended          Extended display (peak line)
-  --help              This help
-  --version           Print version
+  --barwidth <n>     Initial window width (default 1200)
+  --height <n>       Window height (default 150)
+  --showcores        Show per-CPU bars
+  --showmem          Show memory bars
+  --shownet          Show network bars
+  --netint <iface>   Network interface for net bars (e.g. eth0, enp0s3).
+                     Default: first non-lo. Press 'n' in-app to cycle.
+  --netlink <speed>  Link speed for %% (gbit, 10gbit, mbit, 100mbit, or number).
+                     Default: gbit.
+  --extended         Extended display (peak line)
+  --help             This help
+  --version          Print version
 
-Press 'h' during execution for hotkeys. See README for more.
+Config: netint and netlink can be set in ~/.loadbarsrc. Press '3' then see
+stdout for which interface is used; press 'n' to cycle. Press 'h' for hotkeys.
 `, version.Version, constants.CSSHConfFile)
 }

@@ -38,6 +38,18 @@ loadbars servername{01..50}.example.com --showcores 1
 
 Loadbars is a small script that can be used to observe CPU loads of several remote servers at once in real time. It connects with SSH (using SSH public/private key auth) to several servers at once and vizualizes all server CPUs and memory statistics right next each other (either summarized or each core separately). Loadbars is not a tool for collecting CPU loads and drawing graphs for later analysis. However, since such tools require a significant amount of time before producing results, Loadbars lets you observe the current state immediately. Loadbars does not remember or record any load information. It just shows the current CPU usages like top or vmstat does.
 
+## Go version (loadbars-go)
+
+A Go rewrite is available in this repo. Build and run:
+
+```bash
+go build -o loadbars-go ./cmd/loadbars
+./loadbars-go --hosts localhost
+# or: just go-build && ./loadbars-go --hosts localhost
+```
+
+Remote hosts need no Perl: the Go binary pipes `scripts/loadbars-remote.sh` over SSH. Install: `just go-install DESTDIR=/tmp/loadbars`.
+
 ## Installation
 
 ### Dependencies (Fedora/RHEL/CentOS)

@@ -13,6 +13,7 @@ import (
 	"codeberg.org/snonux/loadbars/internal/config"
 	"codeberg.org/snonux/loadbars/internal/constants"
 	"codeberg.org/snonux/loadbars/internal/stats"
+	"codeberg.org/snonux/loadbars/internal/version"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -37,7 +38,7 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 
 	title := cfg.Title
 	if title == "" {
-		title = "Loadbars (press h for help on stdout)"
+		title = "Loadbars " + version.Version + " (press h for help on stdout)"
 	}
 
 	window, renderer, err := sdl.CreateWindowAndRenderer(int32(width), int32(height), sdl.WINDOW_RESIZABLE)

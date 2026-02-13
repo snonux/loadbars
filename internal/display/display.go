@@ -53,7 +53,6 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 	showNet := cfg.ShowNet
 	extended := cfg.Extended
 	winW, winH := int32(width), int32(height)
-	redrawBg := true
 
 	// Previous CPU state for delta (key = host;cpuName)
 	prevCPU := make(map[string]collector.CPULine)
@@ -86,19 +85,15 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 					return nil
 				case sdl.K_1:
 					showCores = !showCores
-					redrawBg = true
 					fmt.Println("==> Toggled show cores:", showCores)
 				case sdl.K_2:
 					showMem = !showMem
-					redrawBg = true
 					fmt.Println("==> Toggled show mem:", showMem)
 				case sdl.K_3:
 					showNet = !showNet
-					redrawBg = true
 					fmt.Println("==> Toggled show net:", showNet)
 				case sdl.K_e:
 					extended = !extended
-					redrawBg = true
 				case sdl.K_h:
 					printHotkeys()
 				case sdl.K_w:
@@ -117,30 +112,25 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 						winW = 1
 					}
 					window.SetSize(winW, winH)
-					redrawBg = true
 				case sdl.K_RIGHT:
 					winW += 100
 					if winW > int32(cfg.MaxWidth) {
 						winW = int32(cfg.MaxWidth)
 					}
 					window.SetSize(winW, winH)
-					redrawBg = true
 				case sdl.K_UP:
 					winH -= 100
 					if winH < 1 {
 						winH = 1
 					}
 					window.SetSize(winW, winH)
-					redrawBg = true
 				case sdl.K_DOWN:
 					winH += 100
 					window.SetSize(winW, winH)
-					redrawBg = true
 				}
 			case *sdl.WindowEvent:
 				if ev.Event == sdl.WINDOWEVENT_RESIZED {
 					winW, winH = ev.Data1, ev.Data2
-					redrawBg = true
 				}
 			}
 		}
@@ -168,11 +158,9 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 			barWidth = 1
 		}
 
-		if redrawBg {
-			renderer.SetDrawColor(0, 0, 0, 255)
-			renderer.Clear()
-			redrawBg = false
-		}
+		// Clear every frame so toggling cores off (or changing bar count) doesn't leave stale bars
+		renderer.SetDrawColor(0, 0, 0, 255)
+		renderer.Clear()
 
 		x := int32(0)
 		hosts := sortedHosts(snap)
@@ -186,6 +174,10 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 			for _, name := range cpuNames {
 				drawCPUBar(renderer, h.CPU[name], prevCPU[host+";"+name], barWidth, &x, winH)
 				prevCPU[host+";"+name] = h.CPU[name]
+			}
+			// Draw memory bar(s) for this host when showMem
+			if showMem {
+				drawMemBar(renderer, h, barWidth, &x, winH)
 			}
 		}
 
@@ -291,6 +283,63 @@ func drawCPUBar(renderer *sdl.Renderer, cur, prev collector.CPULine, barW int32,
 	fill(constants.White.R, constants.White.G, constants.White.B, softirqPct)
 	fill(constants.Red.R, constants.Red.G, constants.Red.B, guestPct)
 	fill(constants.Red.R, constants.Red.G, constants.Red.B, stealPct)
+}
+
+// drawMemBar draws one memory bar (RAM left half, Swap right half) for a host.
+func drawMemBar(renderer *sdl.Renderer, h *stats.HostStats, barW int32, x *int32, winH int32) {
+	defer func() { *x += barW + 1 }()
+	if h.Mem == nil {
+		return
+	}
+	memTotal := h.Mem["MemTotal"]
+	memFree := h.Mem["MemFree"]
+	swapTotal := h.Mem["SwapTotal"]
+	swapFree := h.Mem["SwapFree"]
+
+	halfW := barW / 2
+	barH := float64(winH) / 100.0
+
+	// RAM: used (dark grey) from bottom, free (black) on top
+	if memTotal > 0 {
+		ramUsedPct := 100 - int(100*memFree/memTotal)
+		if ramUsedPct < 0 {
+			ramUsedPct = 0
+		}
+		if ramUsedPct > 100 {
+			ramUsedPct = 100
+		}
+		ramUsedH := int32(float64(ramUsedPct) * barH)
+		if ramUsedH > 0 {
+			renderer.SetDrawColor(constants.DarkGrey.R, constants.DarkGrey.G, constants.DarkGrey.B, 255)
+			renderer.FillRect(&sdl.Rect{X: *x, Y: winH - ramUsedH, W: halfW, H: ramUsedH})
+		}
+		ramFreeH := winH - ramUsedH
+		if ramFreeH > 0 {
+			renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
+			renderer.FillRect(&sdl.Rect{X: *x, Y: 0, W: halfW, H: ramFreeH})
+		}
+	}
+
+	// Swap: used (grey) from bottom, free (black) on top
+	if swapTotal > 0 {
+		swapUsedPct := 100 - int(100*swapFree/swapTotal)
+		if swapUsedPct < 0 {
+			swapUsedPct = 0
+		}
+		if swapUsedPct > 100 {
+			swapUsedPct = 100
+		}
+		swapUsedH := int32(float64(swapUsedPct) * barH)
+		if swapUsedH > 0 {
+			renderer.SetDrawColor(constants.Grey.R, constants.Grey.G, constants.Grey.B, 255)
+			renderer.FillRect(&sdl.Rect{X: *x + halfW, Y: winH - swapUsedH, W: halfW, H: swapUsedH})
+		}
+		swapFreeH := winH - swapUsedH
+		if swapFreeH > 0 {
+			renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
+			renderer.FillRect(&sdl.Rect{X: *x + halfW, Y: 0, W: halfW, H: swapFreeH})
+		}
+	}
 }
 
 func printHotkeys() {

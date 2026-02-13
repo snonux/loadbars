@@ -1,7 +1,7 @@
 NAME := "loadbars"
 VERSION := "0.7.5"
 
-default: version documentation perltidy
+default: version perltidy
 
 version:
     echo {{VERSION}} > .version
@@ -14,10 +14,6 @@ perltidy:
     find . -name \*.pm | xargs perltidy -b
     perltidy -b {{NAME}}
     find . -name \*.bak -delete
-
-documentation:
-    pandoc --standalone --to man ./README.md --metadata title="loadbars" --metadata section="1" --metadata date="$(date +%Y-%m-%d)" > ./docs/{{NAME}}.1
-    pandoc --from markdown --to plain ./README.md > ./docs/{{NAME}}.txt
 
 install DESTDIR="":
     #!/usr/bin/env bash
@@ -53,7 +49,7 @@ clean:
         rm -Rf nytprof
     fi
 
-release: version documentation perltidy
+release: version perltidy
     git add -A
     git commit -m 'New release {{VERSION}}'
     git tag {{VERSION}}

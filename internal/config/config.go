@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/loadbars/loadbars/internal/constants"
+	"codeberg.org/snonux/loadbars/internal/constants"
 )
 
 // Config holds all loadbars configuration (file + CLI).

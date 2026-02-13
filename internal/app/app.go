@@ -4,9 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"github.com/loadbars/loadbars/internal/collector"
-	"github.com/loadbars/loadbars/internal/config"
-	"github.com/loadbars/loadbars/internal/display"
+	"codeberg.org/snonux/loadbars/internal/collector"
+	"codeberg.org/snonux/loadbars/internal/config"
+	"codeberg.org/snonux/loadbars/internal/display"
 )
 
 // Run starts the loadbars application: collectors and display.

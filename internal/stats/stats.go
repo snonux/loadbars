@@ -1,7 +1,7 @@
 package stats
 
 import (
-	"github.com/loadbars/loadbars/internal/collector"
+	"codeberg.org/snonux/loadbars/internal/collector"
 )
 
 // NetStamp holds network stats and timestamp for delta calculation.

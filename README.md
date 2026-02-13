@@ -38,17 +38,18 @@ loadbars servername{01..50}.example.com --showcores 1
 
 Loadbars is a small script that can be used to observe CPU loads of several remote servers at once in real time. It connects with SSH (using SSH public/private key auth) to several servers at once and vizualizes all server CPUs and memory statistics right next each other (either summarized or each core separately). Loadbars is not a tool for collecting CPU loads and drawing graphs for later analysis. However, since such tools require a significant amount of time before producing results, Loadbars lets you observe the current state immediately. Loadbars does not remember or record any load information. It just shows the current CPU usages like top or vmstat does.
 
-## Go version (loadbars-go)
+## Build and run
 
-A Go rewrite is available in this repo. Build and run:
+Build the binary:
 
 ```bash
-go build -o loadbars-go ./cmd/loadbars
-./loadbars-go --hosts localhost
-# or: just go-build && ./loadbars-go --hosts localhost
+go build -o loadbars ./cmd/loadbars
+./loadbars --hosts localhost
 ```
 
-Remote hosts need no Perl: the Go binary pipes `scripts/loadbars-remote.sh` over SSH. Install: `just go-install DESTDIR=/tmp/loadbars`.
+Or use [mage](https://magefile.org): `mage build` (default), `mage test`, `mage install` (set `DESTDIR` for install path), `mage uninstall` / `mage deinstall`.
+
+Remote hosts need no Perl: the binary pipes `scripts/loadbars-remote.sh` over SSH.
 
 ## Installation
 
@@ -132,6 +133,8 @@ will always show all CPU cores. If you press the 'w' hotkey during program execu
 ## License
 
 See package description or project website.
+
+The Go build of loadbars links to **go-sdl2** (github.com/veandco/go-sdl2), which is licensed under the **BSD-3-Clause** license. That license is compatible with loadbars' use and does not impose additional restrictions on distribution. The full copyright notice and license text for go-sdl2 are in the [NOTICE](NOTICE) file.
 
 ## Author
 

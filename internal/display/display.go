@@ -7,10 +7,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/loadbars/loadbars/internal/collector"
-	"github.com/loadbars/loadbars/internal/config"
-	"github.com/loadbars/loadbars/internal/constants"
-	"github.com/loadbars/loadbars/internal/stats"
+	"codeberg.org/snonux/loadbars/internal/collector"
+	"codeberg.org/snonux/loadbars/internal/config"
+	"codeberg.org/snonux/loadbars/internal/constants"
+	"codeberg.org/snonux/loadbars/internal/stats"
 	"github.com/veandco/go-sdl2/sdl"
 )
 

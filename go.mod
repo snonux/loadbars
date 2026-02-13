@@ -1,5 +1,7 @@
-module github.com/loadbars/loadbars
+module codeberg.org/snonux/loadbars
 
-go 1.21
+go 1.25
 
-require github.com/veandco/go-sdl2 v0.4.40 // indirect
+require github.com/veandco/go-sdl2 v0.4.40
+
+require github.com/magefile/mage v1.15.0 // indirect

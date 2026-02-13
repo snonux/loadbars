@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/loadbars/loadbars/internal/app"
-	"github.com/loadbars/loadbars/internal/config"
-	"github.com/loadbars/loadbars/internal/constants"
-	"github.com/loadbars/loadbars/internal/version"
+	"codeberg.org/snonux/loadbars/internal/app"
+	"codeberg.org/snonux/loadbars/internal/config"
+	"codeberg.org/snonux/loadbars/internal/constants"
+	"codeberg.org/snonux/loadbars/internal/version"
 )
 
 func main() {
@@ -84,10 +84,9 @@ func main() {
 		os.Exit(constants.Success)
 	}
 
+	// No hosts given: run locally without SSH
 	if len(cfg.Hosts) == 0 {
-		fmt.Fprintf(os.Stderr, "loadbars: no hosts specified (use --hosts or --cluster)\n")
-		printUsage()
-		os.Exit(constants.ENoHost)
+		cfg.Hosts = []string{"localhost"}
 	}
 
 	if err := app.Run(&cfg); err != nil {

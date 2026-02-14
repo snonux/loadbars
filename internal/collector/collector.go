@@ -25,13 +25,16 @@ type StatsStore interface {
 // The script is embedded in the binary; no external script file is required.
 func Run(ctx context.Context, host string, cfg *config.Config, store StatsStore) error {
 	hostKey, user := splitHostUser(host)
-	
-	// Select script: Darwin for localhost on macOS, Linux for everything else (all remotes are Linux)
+
+	// Select script: Only Linux supported for local monitoring
 	scriptBytes := LinuxScript
 	if isLocal(hostKey) {
 		scriptBytes = getLocalScript()
+		if scriptBytes == nil {
+			return fmt.Errorf("%s: local stats gathering requires Linux with /proc filesystem", hostKey)
+		}
 	}
-	
+
 	script := bytes.NewReader(scriptBytes)
 	var scanner *bufio.Scanner
 	if isLocal(hostKey) {
@@ -135,6 +138,6 @@ func getLocalScript() []byte {
 	if _, err := exec.Command("test", "-d", "/proc").CombinedOutput(); err == nil {
 		return LinuxScript
 	}
-	// Otherwise assume macOS
-	return DarwinScript
+	// /proc not found - unsupported OS for local stats gathering
+	return nil
 }

@@ -10,9 +10,9 @@ Loadbars is a tool that can be used to observe CPU loads of several remote serve
 
 This version of loadbars has been tested on:
 - Fedora Linux 43 and most modern Linux distributions (RHEL, CentOS, Ubuntu, Debian, etc.)
-- macOS (Darwin) - localhost monitoring uses native macOS tools (sysctl, vm_stat, netstat, iostat)
+- macOS (Darwin) - can connect to remote Linux servers via SSH (local monitoring not supported)
 
-**Note:** Remote hosts are assumed to be Linux (using /proc filesystem). When running on macOS, localhost monitoring uses macOS-specific commands, while remote hosts use the Linux script. So remote hosts only work with Linux.
+**Note:** Local monitoring requires Linux with /proc filesystem. Remote hosts must be Linux (using /proc filesystem). macOS can be used as a client to monitor remote Linux servers.
 
 ## Build and run
 

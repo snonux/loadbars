@@ -1,12 +1,10 @@
 # loadbars - A small and humble tool to observe server loads
 
+## Description
+
+Loadbars is a tool that can be used to observe CPU loads of several remote servers at once in real time. It connects with SSH (using SSH public/private key auth) to several servers at once and vizualizes all server CPUs and memory statistics right next each other (either summarized or each core separately). Loadbars is not a tool for collecting CPU loads and drawing graphs for later analysis. However, since such tools require a significant amount of time before producing results, Loadbars lets you observe the current state immediately. Loadbars does not remember or record any load information. It just shows the current CPU usages like top or vmstat does.
+
 ![Loadbars](loadbars.png)
-
-## Synopsis
-
-```
-loadbars [LIST OF HOSTNAMES] [OPTIONS]
-```
 
 ### Tested platforms
 
@@ -14,7 +12,46 @@ This version of loadbars has been tested on:
 - Fedora Linux 43 and most modern Linux distributions (RHEL, CentOS, Ubuntu, Debian, etc.)
 - macOS (Darwin) - localhost monitoring uses native macOS tools (sysctl, vm_stat, netstat, iostat)
 
-**Note:** Remote hosts are assumed to be Linux (using /proc filesystem). When running on macOS, localhost monitoring uses macOS-specific commands, while remote hosts use the Linux script.
+**Note:** Remote hosts are assumed to be Linux (using /proc filesystem). When running on macOS, localhost monitoring uses macOS-specific commands, while remote hosts use the Linux script. So remote hosts only work with Linux.
+
+## Build and run
+
+### SDL2 Dependencies
+
+Loadbars requires SDL2 for the display window. Install it for your platform:
+
+#### Fedora Linux / RHEL / CentOS
+
+```bash
+sudo dnf install SDL2-devel
+```
+
+#### macOS
+
+```bash
+brew install sdl2
+```
+
+### Using Mage (recommended)
+
+Build the binary:
+
+```bash
+mage build
+./loadbars --hosts localhost
+```
+
+Install to GOPATH/bin (e.g. ~/go/bin):
+
+```bash
+mage install
+```
+
+Run tests:
+
+```bash
+mage test
+```
 
 ### I like flying elephants
 
@@ -39,81 +76,6 @@ loadbars servername{01,02,03}.example.com
 loadbars servername{01..50}.example.com --showcores 1
 ```
 
-## Description
-
-Loadbars is a tool that can be used to observe CPU loads of several remote servers at once in real time. It connects with SSH (using SSH public/private key auth) to several servers at once and vizualizes all server CPUs and memory statistics right next each other (either summarized or each core separately). Loadbars is not a tool for collecting CPU loads and drawing graphs for later analysis. However, since such tools require a significant amount of time before producing results, Loadbars lets you observe the current state immediately. Loadbars does not remember or record any load information. It just shows the current CPU usages like top or vmstat does.
-
-## Build and run
-
-### Using Mage (recommended)
-
-Build the binary:
-
-```bash
-mage build
-./loadbars --hosts localhost
-```
-
-Install to GOPATH/bin (e.g. ~/go/bin):
-
-```bash
-mage install
-```
-
-Run tests:
-
-```bash
-mage test
-```
-
-### Using Go directly
-
-Build from source:
-
-```bash
-go build -o loadbars ./cmd/loadbars
-./loadbars --hosts localhost
-```
-
-Install to $GOPATH/bin:
-
-```bash
-go install ./cmd/loadbars
-```
-
-Or install the latest version from the repository:
-
-```bash
-go install codeberg.org/snonux/loadbars/cmd/loadbars@latest
-```
-
-Remote hosts need no Go: the binary embeds the remote script and pipes it to `bash -s` locally or over SSH. Only the single binary needs to be installed.
-
-## Installation
-
-### SDL2 Dependencies
-
-Loadbars requires SDL2 for the display window. Install it for your platform:
-
-#### Fedora Linux / RHEL / CentOS
-
-```bash
-sudo dnf install SDL2-devel
-```
-
-#### Ubuntu / Debian
-
-```bash
-sudo apt install libsdl2-dev
-```
-
-#### macOS
-
-```bash
-brew install sdl2
-```
-
-**macOS Note:** The window automatically comes to the foreground when launched. No additional helper scripts needed. Localhost monitoring on macOS uses native macOS tools (sysctl, vm_stat, netstat, iostat), while remote hosts are assumed to be Linux.
 
 ### Running from Source
 
@@ -137,33 +99,7 @@ Loadbars requires SSH public/private key authentication. Make sure:
 - Your public key is in ~/.ssh/authorized_keys on remote servers
 - SSH agent is running (ssh-agent), or passwordless keys are configured
 
-### macOS Usage
-
-When running loadbars on macOS:
-
-- **Localhost monitoring** uses macOS native tools (sysctl, vm_stat, netstat, iostat)
-- **Remote hosts** are assumed to be Linux (uses the Linux script over SSH)
-- **Window activation** is automatic - the SDL window will come to foreground when launched
-
-**Examples:**
-
-```bash
-# Monitor localhost
-./loadbars --showcores --showmem --shownet
-
-# Monitor remote Linux servers
-./loadbars server1.example.com server2.example.com --showcores
-
-# Monitor both localhost and remotes
-./loadbars localhost server1.example.com server2.example.com --showcores
-```
-
-**Known macOS limitations:**
-- Remote macOS hosts are not supported (assumes all remote hosts are Linux)
-- Per-core CPU statistics are not available (iostat limitation)
-- Swap usage always shows 0 (macOS uses compressed memory differently)
-
-## Info
+## More usage
 
 ### Hotkeys
 
@@ -238,7 +174,7 @@ will always show all CPU cores. If you press the 'w' hotkey during program execu
 
 See package description or project website.
 
-The Go build of loadbars links to **go-sdl2** (github.com/veandco/go-sdl2), which is licensed under the **BSD-3-Clause** license. That license is compatible with loadbars' use and does not impose additional restrictions on distribution. The full copyright notice and license text for go-sdl2 are in the [NOTICE](NOTICE) file.
+The Go build of loadbars links to **go-sdl2** (github.com/veandco/go-sdl2), which is licensed under the **BSD-3-Clause** license. That license is compatible with loadbars' use and does not impose additional restrictions on distribution. The full copyright notice and license text for go-sdl2 are in the [LICENSE](LICENSE) file.
 
 ## Author
 

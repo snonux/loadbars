@@ -87,6 +87,9 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 	defer renderer.Destroy()
 	window.SetTitle(title)
 
+	// On macOS, bring the window to the foreground
+	activateWindow()
+
 	state := newRunState(cfg, int32(width), int32(height))
 	ticker := time.NewTicker(time.Duration(constants.IntervalSDL * float64(time.Second)))
 	defer ticker.Stop()

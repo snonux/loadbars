@@ -25,7 +25,14 @@ type StatsStore interface {
 // The script is embedded in the binary; no external script file is required.
 func Run(ctx context.Context, host string, cfg *config.Config, store StatsStore) error {
 	hostKey, user := splitHostUser(host)
-	script := bytes.NewReader(RemoteScript)
+	
+	// Select script: Darwin for localhost on macOS, Linux for everything else (all remotes are Linux)
+	scriptBytes := LinuxScript
+	if isLocal(hostKey) {
+		scriptBytes = getLocalScript()
+	}
+	
+	script := bytes.NewReader(scriptBytes)
 	var scanner *bufio.Scanner
 	if isLocal(hostKey) {
 		cmd := exec.CommandContext(ctx, "bash", "-s")
@@ -120,4 +127,14 @@ func splitHostUser(host string) (h, u string) {
 
 func isLocal(h string) bool {
 	return h == "localhost" || h == "127.0.0.1"
+}
+
+// getLocalScript returns the appropriate script for the local OS
+func getLocalScript() []byte {
+	// Check if /proc exists (Linux/Unix)
+	if _, err := exec.Command("test", "-d", "/proc").CombinedOutput(); err == nil {
+		return LinuxScript
+	}
+	// Otherwise assume macOS
+	return DarwinScript
 }

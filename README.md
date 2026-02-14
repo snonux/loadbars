@@ -10,8 +10,11 @@ loadbars [LIST OF HOSTNAMES] [OPTIONS]
 
 ### Tested platforms
 
-This version of loadbars has been tested on Fedora Linux 43 and should work on
-most modern Linux distributions (RHEL, CentOS, Ubuntu, Debian, etc.).
+This version of loadbars has been tested on:
+- Fedora Linux 43 and most modern Linux distributions (RHEL, CentOS, Ubuntu, Debian, etc.)
+- macOS (Darwin) - localhost monitoring uses native macOS tools (sysctl, vm_stat, netstat, iostat)
+
+**Note:** Remote hosts are assumed to be Linux (using /proc filesystem). When running on macOS, localhost monitoring uses macOS-specific commands, while remote hosts use the Linux script.
 
 ### I like flying elephants
 
@@ -101,6 +104,14 @@ On Ubuntu/Debian:
 ```bash
 sudo apt install libsdl2-dev
 ```
+
+On macOS:
+
+```bash
+brew install sdl2
+```
+
+**macOS Note:** The window will automatically come to the foreground when launched. No additional scripts needed.
 
 ### Running from Source
 

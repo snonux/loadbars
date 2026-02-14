@@ -66,6 +66,34 @@ Network interface: chosen by `netint` config or first non-`lo`; press `n` to cyc
 
 - `go test ./...` or `mage test`. No UI tests; collector has parse tests for protocol (e.g. `ParseNetLine` for Linux-style `/proc/net/dev` output).
 
+## macOS support
+
+Loadbars supports macOS with automatic window activation and OS-specific monitoring scripts.
+
+### Implementation details
+
+- **Script embedding:** Both Linux and Darwin monitoring scripts are embedded in the binary
+- **OS detection:** Automatically uses the correct script based on the host:
+  - `localhost` on macOS → Darwin script (sysctl, vm_stat, netstat, iostat)
+  - `localhost` on Linux → Linux script (/proc filesystem)
+  - All remote hosts → Linux script (assumes remote servers are Linux)
+- **Window activation:** macOS-specific code automatically brings SDL window to foreground
+  - Uses build tags (`activate_darwin.go` and `activate.go`)
+  - No external helper script needed
+
+### Key files
+
+- `internal/collector/script.go` - Embeds both scripts
+- `internal/collector/collector.go` - Selects script based on host (checks if `/proc` exists for localhost)
+- `internal/display/activate_darwin.go` - macOS-specific activation using `open -a`
+- `internal/display/activate.go` - No-op for other platforms
+
+### Known limitations
+
+- Remote macOS hosts are not supported (assumes all remote hosts are Linux)
+- macOS script doesn't provide per-core CPU statistics (iostat limitation)
+- Swap usage on macOS always shows 0 (macOS uses compressed memory differently)
+
 ## Useful references
 
 - **README.md** – User-facing usage, hotkeys, config, network interface.

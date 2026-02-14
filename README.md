@@ -91,27 +91,29 @@ Remote hosts need no Go: the binary embeds the remote script and pipes it to `ba
 
 ## Installation
 
-### Dependencies (Fedora/RHEL/CentOS)
+### SDL2 Dependencies
 
-To run loadbars on Fedora Linux, you need the install the SDL2 development libraries:
+Loadbars requires SDL2 for the display window. Install it for your platform:
+
+#### Fedora Linux / RHEL / CentOS
 
 ```bash
 sudo dnf install SDL2-devel
 ```
 
-On Ubuntu/Debian:
+#### Ubuntu / Debian
 
 ```bash
 sudo apt install libsdl2-dev
 ```
 
-On macOS:
+#### macOS
 
 ```bash
 brew install sdl2
 ```
 
-**macOS Note:** The window will automatically come to the foreground when launched. No additional scripts needed.
+**macOS Note:** The window automatically comes to the foreground when launched. No additional helper scripts needed. Localhost monitoring on macOS uses native macOS tools (sysctl, vm_stat, netstat, iostat), while remote hosts are assumed to be Linux.
 
 ### Running from Source
 
@@ -134,6 +136,32 @@ Loadbars requires SSH public/private key authentication. Make sure:
 - You have SSH keys set up (~/.ssh/id_rsa or similar)
 - Your public key is in ~/.ssh/authorized_keys on remote servers
 - SSH agent is running (ssh-agent), or passwordless keys are configured
+
+### macOS Usage
+
+When running loadbars on macOS:
+
+- **Localhost monitoring** uses macOS native tools (sysctl, vm_stat, netstat, iostat)
+- **Remote hosts** are assumed to be Linux (uses the Linux script over SSH)
+- **Window activation** is automatic - the SDL window will come to foreground when launched
+
+**Examples:**
+
+```bash
+# Monitor localhost
+./loadbars --showcores --showmem --shownet
+
+# Monitor remote Linux servers
+./loadbars server1.example.com server2.example.com --showcores
+
+# Monitor both localhost and remotes
+./loadbars localhost server1.example.com server2.example.com --showcores
+```
+
+**Known macOS limitations:**
+- Remote macOS hosts are not supported (assumes all remote hosts are Linux)
+- Per-core CPU statistics are not available (iostat limitation)
+- Swap usage always shows 0 (macOS uses compressed memory differently)
 
 ## Info
 

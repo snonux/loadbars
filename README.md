@@ -109,10 +109,9 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 |-----|--------|
 | **1** | Toggle CPU cores (one bar per core vs one aggregate bar per host) |
 | **2** | Toggle memory bars (RAM left, Swap right per host) |
-| **3** | Toggle network bars (RX/TX per host); stdout shows which interface is used |
+| **3** | Toggle network bars (RX/TX summed across all non-lo interfaces per host) |
 | **e** | Toggle extended display (1px peak line on CPU bars: max system+user over last samples) |
 | **h** | Print hotkey list to stdout |
-| **n** | Cycle to next network interface (per host); only when net bars are shown |
 | **q** | Quit |
 | **w** | Write current settings to ~/.loadbarsrc |
 | **a** | Increase CPU average samples (affects extended peak history length) |
@@ -148,13 +147,9 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 - `Rxb` = Incoming (received) traffic in %, Color: Light green, normal green if >100% while using low netlink reference. Bar comes from top and is half width.
 - `Txb` = Outgoing (transmitted) traffic in %, Color: Light green, normal green if >100% while using low netlink reference. Bar comes from bottom and is half width.
 
-When network bar is red: The interface does not exist on the specific remote host.
+When network bar is red: No non-loopback interface exists on the specific remote host.
 
-**Choosing the network interface:** By default loadbars uses the first non-loopback interface (e.g. `eth0`, `enp0s3`). If stats never change, you may be watching the wrong interface (e.g. `docker0` with little traffic). Set the interface explicitly:
-
-- In **~/.loadbarsrc**: `netint=eth0` (use the name from `/proc/net/dev` or `ip link`)
-- On the command line: `loadbars --netint eth0 --hosts localhost`
-- In-app: press **3** to show net bars (stdout will print which interface is used), then **n** to cycle to the next interface.
+**Aggregated interfaces:** Loadbars sums RX/TX across all non-loopback interfaces (e.g. `eth0`, `wlan0`, `enp0s3`) and shows the combined total. Loopback (`lo`) is always excluded.
 
 **Link speed** (`netlink`): Used to compute utilization %. Default is `gbit`. Set e.g. `netlink=100mbit` or `netlink=10gbit` in ~/.loadbarsrc or `--netlink 100mbit`.
 
@@ -164,7 +159,6 @@ Loadbars tries to read ~/.loadbarsrc and it's possible to configure any option y
 
 ```
 showcores=1   # Always show cores on startup
-netint=eth0   # Interface for network bars (optional)
 netlink=gbit  # Link speed for utilization % (optional)
 ```
 

@@ -21,40 +21,35 @@ const smoothFactor = 0.12 // blend toward target each frame; lower = smoother
 
 // runState holds mutable state across the display loop (hotkeys, window size, smoothed data).
 type runState struct {
-	showCores       bool
-	showMem         bool
-	showNet         bool
-	extended        bool
-	winW            int32
-	winH            int32
-	prevCPU         map[string]collector.CPULine
-	smoothedCPU     map[string]*[9]float64
-	smoothedMem     map[string]*struct{ ramUsed, swapUsed float64 }
-	smoothedNet     map[string]*struct{ rxPct, txPct float64 }
-	prevNet         map[string]stats.NetStamp
-	netIntIndex     map[string]int
-	cycleNetNext    bool
-	printNetInfoOnce bool
-	peakHistory     map[string][]float64
+	showCores   bool
+	showMem     bool
+	showNet     bool
+	extended    bool
+	winW        int32
+	winH        int32
+	prevCPU     map[string]collector.CPULine
+	smoothedCPU map[string]*[9]float64
+	smoothedMem map[string]*struct{ ramUsed, swapUsed float64 }
+	smoothedNet map[string]*struct{ rxPct, txPct float64 }
+	prevNet     map[string]stats.NetStamp // aggregated (summed) previous net stamp per host
+	peakHistory map[string][]float64
 }
 
 // newRunState builds initial run state from config.
 func newRunState(cfg *config.Config, winW, winH int32) *runState {
 	return &runState{
-		showCores:        cfg.ShowCores,
-		showMem:          cfg.ShowMem,
-		showNet:          cfg.ShowNet,
-		extended:         cfg.Extended,
-		winW:             winW,
-		winH:             winH,
-		prevCPU:          make(map[string]collector.CPULine),
-		smoothedCPU:      make(map[string]*[9]float64),
-		smoothedMem:      make(map[string]*struct{ ramUsed, swapUsed float64 }),
-		smoothedNet:      make(map[string]*struct{ rxPct, txPct float64 }),
-		prevNet:          make(map[string]stats.NetStamp),
-		netIntIndex:      make(map[string]int),
-		printNetInfoOnce: cfg.ShowNet,
-		peakHistory:      make(map[string][]float64),
+		showCores:   cfg.ShowCores,
+		showMem:     cfg.ShowMem,
+		showNet:     cfg.ShowNet,
+		extended:    cfg.Extended,
+		winW:        winW,
+		winH:        winH,
+		prevCPU:     make(map[string]collector.CPULine),
+		smoothedCPU: make(map[string]*[9]float64),
+		smoothedMem: make(map[string]*struct{ ramUsed, swapUsed float64 }),
+		smoothedNet: make(map[string]*struct{ rxPct, txPct float64 }),
+		prevNet:     make(map[string]stats.NetStamp),
+		peakHistory: make(map[string][]float64),
 	}
 }
 
@@ -152,9 +147,6 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 	case sdl.K_3:
 		state.showNet = !state.showNet
 		fmt.Println("==> Toggled show net:", state.showNet)
-		if state.showNet {
-			state.printNetInfoOnce = true
-		}
 	case sdl.K_e:
 		state.extended = !state.extended
 		fmt.Println("==> Toggled extended (peak line):", state.extended)
@@ -180,11 +172,6 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 		scaleLinkDown(cfg)
 	case sdl.K_h:
 		printHotkeys()
-	case sdl.K_n:
-		state.cycleNetNext = true
-		if state.showNet {
-			fmt.Println("==> Cycling to next network interface (per host)")
-		}
 	case sdl.K_w:
 		cfg.ShowCores = state.showCores
 		cfg.ShowMem = state.showMem
@@ -223,16 +210,6 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 // drawFrame updates state from snapshot, clears if layout changed, and draws all bars.
 func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, state *runState) {
 	snap := src.Snapshot()
-	if state.cycleNetNext {
-		for _, host := range sortedHosts(snap) {
-			state.netIntIndex[host]++
-		}
-		state.cycleNetNext = false
-	}
-	if state.printNetInfoOnce && state.showNet {
-		state.printNetInfoOnce = false
-		printNetInterfaceHelp(snap, cfg, state.netIntIndex)
-	}
 	numBars := countBars(snap, state.showCores, state.showMem, state.showNet)
 	barWidth := state.winW / int32(numBars)
 	if barWidth < 1 {
@@ -314,7 +291,7 @@ func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *
 		if state.smoothedNet[host] == nil {
 			state.smoothedNet[host] = &struct{ rxPct, txPct float64 }{}
 		}
-		state.prevNet[host] = drawNetBarSmoothed(renderer, h, cfg, state.smoothedNet[host], state.prevNet[host], state.netIntIndex, host, smoothFactor, barWidth, x, winH)
+		state.prevNet[host] = drawNetBarSmoothed(renderer, h, cfg, state.smoothedNet[host], state.prevNet[host], smoothFactor, barWidth, x, winH)
 	}
 }
 
@@ -526,35 +503,9 @@ func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *st
 }
 
 func printHotkeys() {
-	fmt.Println("=> Hotkeys: 1=cores 2=mem 3=net e=extended h=help n=next net q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
+	fmt.Println("=> Hotkeys: 1=cores 2=mem 3=net e=extended h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
 }
 
-// printNetInterfaceHelp prints which interface is used per host and how to set netint (when net view is toggled on).
-func printNetInterfaceHelp(snap map[string]*stats.HostStats, cfg *config.Config, netIntIndex map[string]int) {
-	for _, host := range sortedHosts(snap) {
-		h := snap[host]
-		if h == nil || h.Net == nil || len(h.Net) == 0 {
-			fmt.Printf("Net: %s => (no interfaces yet, wait for data)\n", host)
-			continue
-		}
-		iface := chooseNetIface(h, cfg, host, netIntIndex)
-		all := make([]string, 0, len(h.Net))
-		for name := range h.Net {
-			all = append(all, name)
-		}
-		sort.Strings(all)
-		if iface == "" {
-			fmt.Printf("Net: %s => (no non-lo interface; seen: %s)\n", host, strings.Join(all, ", "))
-			continue
-		}
-		hint := "set netint=IFACE in ~/.loadbarsrc or --netint IFACE"
-		if cfg.NetInt != "" {
-			hint = "using netint=" + cfg.NetInt + " from config"
-		}
-		fmt.Printf("Net: %s => %s (all: %s). %s\n", host, iface, strings.Join(all, ", "), hint)
-	}
-	fmt.Println("=> Link speed: netlink=" + cfg.NetLink + " (gbit/mbit/10mbit/100mbit/10gbit or number). Change in ~/.loadbarsrc or --netlink")
-}
 
 // netLinkBytesPerSec returns link speed in bytes/sec from cfg.NetLink (e.g. "gbit", "10gbit", "100mbit", or numeric mbit).
 
@@ -616,58 +567,54 @@ func netLinkBytesPerSec(cfg *config.Config) int64 {
 	return int64(constants.BytesGbit)
 }
 
-// chooseNetIface returns the interface name to use for this host: cfg.NetInt if set and present, else first non-lo, cycling with n key.
-func chooseNetIface(h *stats.HostStats, cfg *config.Config, host string, netIntIndex map[string]int) string {
-	if h.Net == nil || len(h.Net) == 0 {
-		return ""
+// sumNonLoNet aggregates RX (B) and TX (Tb) bytes across all non-lo interfaces,
+// using the latest timestamp from any interface.
+func sumNonLoNet(h *stats.HostStats) (sum stats.NetStamp, hasIface bool) {
+	if h.Net == nil {
+		return sum, false
 	}
-	if cfg.NetInt != "" {
-		if _, ok := h.Net[cfg.NetInt]; ok {
-			return cfg.NetInt
-		}
-	}
-	names := make([]string, 0, len(h.Net))
-	for iface := range h.Net {
+	for iface, ns := range h.Net {
 		if iface == "lo" {
 			continue
 		}
-		names = append(names, iface)
+		hasIface = true
+		sum.B += ns.B
+		sum.Tb += ns.Tb
+		if ns.Stamp > sum.Stamp {
+			sum.Stamp = ns.Stamp
+		}
 	}
-	sort.Strings(names)
-	if len(names) == 0 {
-		return ""
-	}
-	idx := netIntIndex[host] % len(names)
-	if idx < 0 {
-		idx += len(names)
-	}
-	return names[idx]
+	return sum, hasIface
 }
 
-func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.Config, smoothed *struct{ rxPct, txPct float64 }, prev stats.NetStamp, netIntIndex map[string]int, host string, factor float64, barW int32, x *int32, winH int32) stats.NetStamp {
+// drawNetBarSmoothed sums RX/TX across all non-lo interfaces, computes utilization
+// vs link speed, smooths toward target, and draws one net bar (RX left from top, TX right from bottom).
+// Smoothed values and prevNet are only updated when new collector data arrives
+// (cur.Stamp > prev.Stamp), so the bar holds steady between collector cycles
+// instead of decaying toward zero on frames with no new data.
+func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.Config, smoothed *struct{ rxPct, txPct float64 }, prev stats.NetStamp, factor float64, barW int32, x *int32, winH int32) stats.NetStamp {
 	defer func() { *x += barW }()
 	// Clear this slot so we never leave previous (e.g. CPU/mem) content visible
 	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
 	renderer.FillRect(&sdl.Rect{X: *x, Y: 0, W: barW, H: winH})
-	iface := chooseNetIface(h, cfg, host, netIntIndex)
-	if iface == "" {
+	cur, hasIface := sumNonLoNet(h)
+	if !hasIface {
+		// No non-lo interface: show red bar
 		renderer.SetDrawColor(constants.Red.R, constants.Red.G, constants.Red.B, 255)
 		renderer.FillRect(&sdl.Rect{X: *x, Y: 0, W: barW, H: winH})
 		return prev
 	}
-	cur, ok := h.Net[iface]
-	if !ok {
-		renderer.SetDrawColor(constants.Red.R, constants.Red.G, constants.Red.B, 255)
-		renderer.FillRect(&sdl.Rect{X: *x, Y: 0, W: barW, H: winH})
-		return prev
-	}
-	linkBps := netLinkBytesPerSec(cfg)
-	if linkBps <= 0 {
-		linkBps = int64(constants.BytesGbit)
-	}
-	var targetRx, targetTx float64
-	if prev.Stamp > 0 && cur.Stamp > prev.Stamp {
-		dt := float64(cur.Stamp-prev.Stamp) / 1e9
+	// Only recompute and smooth when the collector has provided new data.
+	// The collector updates net stamps every ~2.8s, but drawFrame runs every
+	// ~0.14s. Without this guard, the 19 intermediate frames would set
+	// target to 0 (no delta) and smooth the bar toward zero, making real
+	// traffic invisible.
+	if cur.Stamp > prev.Stamp && prev.Stamp > 0 {
+		linkBps := netLinkBytesPerSec(cfg)
+		if linkBps <= 0 {
+			linkBps = int64(constants.BytesGbit)
+		}
+		dt := cur.Stamp - prev.Stamp
 		if dt > 0 {
 			deltaB := cur.B - prev.B
 			deltaTb := cur.Tb - prev.Tb
@@ -677,12 +624,16 @@ func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.
 			if deltaTb < 0 {
 				deltaTb = 0
 			}
-			targetRx = 100 * float64(deltaB) / (float64(linkBps) * dt)
-			targetTx = 100 * float64(deltaTb) / (float64(linkBps) * dt)
+			targetRx := 100 * float64(deltaB) / (float64(linkBps) * dt)
+			targetTx := 100 * float64(deltaTb) / (float64(linkBps) * dt)
+			smoothed.rxPct += (targetRx - smoothed.rxPct) * factor
+			smoothed.txPct += (targetTx - smoothed.txPct) * factor
 		}
+		prev = cur // only advance prev when we consumed new data
+	} else if prev.Stamp == 0 {
+		// First sample: record it but don't draw yet (no delta available)
+		prev = cur
 	}
-	smoothed.rxPct += (targetRx - smoothed.rxPct) * factor
-	smoothed.txPct += (targetTx - smoothed.txPct) * factor
 
 	halfW := barW / 2
 	barH := float64(winH) / 100.0
@@ -712,5 +663,5 @@ func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.
 		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
 		renderer.FillRect(&sdl.Rect{X: *x + halfW, Y: 0, W: halfW, H: winH - txH})
 	}
-	return cur
+	return prev
 }

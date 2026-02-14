@@ -278,7 +278,7 @@ func TestNetBar_RxTx(t *testing.T) {
 					"cpu": {User: 100, System: 100, Idle: 800},
 				},
 				Net: map[string]stats.NetStamp{
-					"eth0": {B: 12500000, Tb: 6250000, Stamp: 2e9}, // current sample
+					"eth0": {B: 12500000, Tb: 6250000, Stamp: 2.0}, // current sample
 				},
 			},
 		},
@@ -288,7 +288,7 @@ func TestNetBar_RxTx(t *testing.T) {
 	state.prevCPU["host1;cpu"] = collector.CPULine{}
 	// Pre-populate prevNet so delta calculation works:
 	// RX: delta=12500000 bytes in 1s = 10% of gbit, TX: 6250000 = 5% of gbit
-	state.prevNet["host1"] = stats.NetStamp{B: 0, Tb: 0, Stamp: 1e9}
+	state.prevNet["host1"] = stats.NetStamp{B: 0, Tb: 0, Stamp: 1.0}
 	// Pre-populate smoothed net so first frame is near target
 	state.smoothedNet["host1"] = &struct{ rxPct, txPct float64 }{
 		rxPct: 10, txPct: 5,
@@ -304,6 +304,60 @@ func TestNetBar_RxTx(t *testing.T) {
 
 	// Right half (TX from bottom): 5% = 5px of LightGreen from bottom
 	assertPixelColor(t, surface, 85, 98, constants.LightGreen, tol, "TX at bottom")
+	assertPixelColor(t, surface, 85, 10, constants.Black, tol, "TX free area")
+}
+
+func TestNetBar_AggregatesAllInterfaces(t *testing.T) {
+	const w, h int32 = 100, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	cfg := defaultTestConfig()
+	cfg.ShowCores = false
+	cfg.ShowMem = false
+	cfg.ShowNet = true
+	cfg.NetLink = "gbit"
+
+	// Two non-lo interfaces: combined RX = 12500000+12500000 = 25000000 → 20% of gbit
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"host1": {
+				CPU: map[string]collector.CPULine{
+					"cpu": {User: 100, System: 100, Idle: 800},
+				},
+				Net: map[string]stats.NetStamp{
+					"eth0":  {B: 12500000, Tb: 6250000, Stamp: 2.0},
+					"wlan0": {B: 12500000, Tb: 6250000, Stamp: 2.0},
+					"lo":    {B: 99999999, Tb: 99999999, Stamp: 2.0}, // lo must be excluded
+				},
+			},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.prevCPU["host1;cpu"] = collector.CPULine{}
+	// Previous aggregated stamp: all zeros at t=1
+	state.prevNet["host1"] = stats.NetStamp{B: 0, Tb: 0, Stamp: 1.0}
+	// Pre-populate smoothed to 20% RX, 10% TX (the expected combined values)
+	state.smoothedNet["host1"] = &struct{ rxPct, txPct float64 }{
+		rxPct: 20, txPct: 10,
+	}
+
+	drawFrame(renderer, src, cfg, state)
+
+	const tol = 5
+	// Net bar: 1 CPU + 1 net = 2 bars, each 50px. Net bar at x=50, halfW=25
+	// Left half (RX from top): 20% = 20px of LightGreen from top
+	assertPixelColor(t, surface, 60, 5, constants.LightGreen, tol, "aggregated RX at top")
+	assertPixelColor(t, surface, 60, 45, constants.Black, tol, "RX free area")
+
+	// Right half (TX from bottom): 10% = 10px of LightGreen from bottom
+	assertPixelColor(t, surface, 85, 98, constants.LightGreen, tol, "aggregated TX at bottom")
 	assertPixelColor(t, surface, 85, 10, constants.Black, tol, "TX free area")
 }
 
@@ -332,12 +386,12 @@ func TestMultiHost_BarCount(t *testing.T) {
 			"alpha": {
 				CPU: map[string]collector.CPULine{"cpu": alphaCur},
 				Mem:  map[string]int64{"MemTotal": 100, "MemFree": 50, "SwapTotal": 0, "SwapFree": 0},
-				Net:  map[string]stats.NetStamp{"eth0": {B: 0, Tb: 0, Stamp: 1e9}},
+				Net:  map[string]stats.NetStamp{"eth0": {B: 0, Tb: 0, Stamp: 1.0}},
 			},
 			"beta": {
 				CPU: map[string]collector.CPULine{"cpu": betaCur},
 				Mem:  map[string]int64{"MemTotal": 100, "MemFree": 50, "SwapTotal": 0, "SwapFree": 0},
-				Net:  map[string]stats.NetStamp{"eth0": {B: 0, Tb: 0, Stamp: 1e9}},
+				Net:  map[string]stats.NetStamp{"eth0": {B: 0, Tb: 0, Stamp: 1.0}},
 			},
 		},
 	}
@@ -443,7 +497,7 @@ func TestNetBar_NoInterface(t *testing.T) {
 					"cpu": {User: 100, System: 100, Idle: 800},
 				},
 				Net: map[string]stats.NetStamp{
-					"lo": {B: 0, Tb: 0, Stamp: 1e9}, // only loopback
+					"lo": {B: 0, Tb: 0, Stamp: 1.0}, // only loopback
 				},
 			},
 		},
@@ -573,8 +627,8 @@ func newHotkeyTestEnv(t *testing.T, showCores, showMem, showNet bool) (
 					"SwapFree":  600,
 				},
 				Net: map[string]stats.NetStamp{
-					"eth0": {B: 12500000, Tb: 6250000, Stamp: 2e9},
-					"wlan0": {B: 1000000, Tb: 500000, Stamp: 2e9},
+					"eth0": {B: 12500000, Tb: 6250000, Stamp: 2.0},
+					"wlan0": {B: 1000000, Tb: 500000, Stamp: 2.0},
 				},
 			},
 		},
@@ -584,7 +638,7 @@ func newHotkeyTestEnv(t *testing.T, showCores, showMem, showNet bool) (
 	state.prevCPU["host1;cpu"] = prev
 	state.prevCPU["host1;cpu0"] = prev0
 	state.prevCPU["host1;cpu1"] = prev1
-	state.prevNet["host1"] = stats.NetStamp{B: 0, Tb: 0, Stamp: 1e9}
+	state.prevNet["host1"] = stats.NetStamp{B: 0, Tb: 0, Stamp: 1.0}
 	state.smoothedNet["host1"] = &struct{ rxPct, txPct float64 }{
 		rxPct: 10, txPct: 5,
 	}
@@ -752,16 +806,6 @@ func TestHandleKey_NetAverage(t *testing.T) {
 	handleKey(sdl.K_c, nil, cfg, state)
 	if cfg.NetAverage != 1 {
 		t.Errorf("expected NetAverage=1 (clamped), got %d", cfg.NetAverage)
-	}
-}
-
-func TestHandleKey_CycleNet(t *testing.T) {
-	cfg := defaultTestConfig()
-	state := newRunState(cfg, 200, 100)
-
-	handleKey(sdl.K_n, nil, cfg, state)
-	if !state.cycleNetNext {
-		t.Error("expected cycleNetNext=true after pressing 'n'")
 	}
 }
 

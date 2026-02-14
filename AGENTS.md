@@ -51,15 +51,15 @@ Default when no hosts are given: `localhost`. No SSH required for local use.
 ## Display and hotkeys
 
 - **Display** (`internal/display`): One loop – poll events, snapshot from store, count bars, clear only when layout/size changes, draw CPU then mem then net per host, present. Bar width = `winW / numBars`; no gap between bars (avoids 1px artifacts).
-- **Hotkeys:** 1=cores, 2=mem, 3=net, e=extended (peak line), h=help, n=cycle net iface, q=quit, w=write config, a/y=cpu avg, d/c=net avg, arrows=resize. See README “Hotkeys” table.
+- **Hotkeys:** 1=cores, 2=mem, 3=net, e=extended (peak line), h=help, q=quit, w=write config, a/y=cpu avg, d/c=net avg, f/v=link scale, arrows=resize. See README "Hotkeys" table.
 
-Network interface: chosen by `netint` config or first non-`lo`; press `n` to cycle. When net is toggled on, stdout prints which interface is used and how to set `netint`/`netlink`.
+Network bars aggregate RX/TX across all non-`lo` interfaces per host. Link speed is set via `netlink` config or `--netlink` flag.
 
 ## Conventions
 
 - Prefer the existing `internal/*` package layout; avoid adding new toplevel Go packages unless necessary.
 - Version is the single source in `internal/version/version.go`.
-- Config keys are lowercase in `~/.loadbarsrc` (e.g. `netint=eth0`, `netlink=gbit`).
+- Config keys are lowercase in `~/.loadbarsrc` (e.g. `netlink=gbit`).
 - No text/font rendering in the SDL window in the current design; keep feedback on stdout unless the user explicitly asks for in-window labels.
 
 ## Testing

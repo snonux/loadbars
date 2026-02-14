@@ -23,7 +23,6 @@ type Config struct {
 	Height     int
 	MaxWidth   int
 	NetAverage int
-	NetInt     string
 	NetLink    string
 	ShowCores  bool
 	ShowMem    bool
@@ -104,7 +103,7 @@ func (c *Config) parseReader(f *os.File) error {
 	validKeys := map[string]bool{
 		"title": true, "barwidth": true, "cpuaverage": true, "extended": true,
 		"hasagent": true, "height": true, "maxwidth": true, "netaverage": true,
-		"netint": true, "netlink": true, "showcores": true, "showmem": true,
+		"netlink": true, "showcores": true, "showmem": true,
 		"shownet": true, "sshopts": true, "cluster": true,
 	}
 	scanner := bufio.NewScanner(f)
@@ -158,8 +157,6 @@ func (c *Config) set(key, val string) {
 		if n, err := strconv.Atoi(val); err == nil {
 			c.NetAverage = n
 		}
-	case "netint":
-		c.NetInt = val
 	case "netlink":
 		c.NetLink = val
 	case "showcores":
@@ -198,7 +195,6 @@ func (c *Config) writeTo(f *os.File) error {
 	writeInt("height", c.Height)
 	writeInt("maxwidth", c.MaxWidth)
 	writeInt("netaverage", c.NetAverage)
-	writeStr("netint", c.NetInt)
 	writeStr("netlink", c.NetLink)
 	writeBool("showcores", c.ShowCores)
 	writeBool("showmem", c.ShowMem)

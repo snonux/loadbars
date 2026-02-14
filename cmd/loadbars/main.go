@@ -26,7 +26,6 @@ func main() {
 	flag.IntVar(&cfg.MaxWidth, "maxwidth", cfg.MaxWidth, "Set max width")
 	flag.IntVar(&cfg.CPUAverage, "cpuaverage", cfg.CPUAverage, "Num of CPU samples for avg")
 	flag.IntVar(&cfg.NetAverage, "netaverage", cfg.NetAverage, "Num of net samples for avg")
-	flag.StringVar(&cfg.NetInt, "netint", cfg.NetInt, "Interface to show netstats for")
 	flag.StringVar(&cfg.NetLink, "netlink", cfg.NetLink, "Link speed (mbit, 10mbit, 100mbit, gbit, 10gbit or number)")
 	flag.BoolVar(&cfg.ShowCores, "showcores", cfg.ShowCores, "Toggle core display")
 	flag.BoolVar(&cfg.ShowMem, "showmem", cfg.ShowMem, "Toggle mem display")
@@ -119,16 +118,13 @@ Options:
   --height <n>       Window height (default 150)
   --showcores        Show per-CPU bars
   --showmem          Show memory bars
-  --shownet          Show network bars
-  --netint <iface>   Network interface for net bars (e.g. eth0, enp0s3).
-                     Default: first non-lo. Press 'n' in-app to cycle.
+  --shownet          Show network bars (aggregates all non-lo interfaces)
   --netlink <speed>  Link speed for %% (gbit, 10gbit, mbit, 100mbit, or number).
                      Default: gbit.
   --extended         Extended display (peak line)
   --help             This help
   --version          Print version
 
-Config: netint and netlink can be set in ~/.loadbarsrc. Press '3' then see
-stdout for which interface is used; press 'n' to cycle. Press 'h' for hotkeys.
+Config: netlink can be set in ~/.loadbarsrc. Press 'h' for hotkeys.
 `, version.Version, constants.CSSHConfFile)
 }

@@ -27,9 +27,6 @@ type runState struct {
 	extended        bool
 	winW            int32
 	winH            int32
-	lastNumBars     int
-	lastWinW        int32
-	lastWinH        int32
 	prevCPU         map[string]collector.CPULine
 	smoothedCPU     map[string]*[9]float64
 	smoothedMem     map[string]*struct{ ramUsed, swapUsed float64 }
@@ -50,7 +47,6 @@ func newRunState(cfg *config.Config, winW, winH int32) *runState {
 		extended:         cfg.Extended,
 		winW:             winW,
 		winH:             winH,
-		lastNumBars:      -1,
 		prevCPU:          make(map[string]collector.CPULine),
 		smoothedCPU:      make(map[string]*[9]float64),
 		smoothedMem:      make(map[string]*struct{ ramUsed, swapUsed float64 }),
@@ -238,12 +234,12 @@ func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, sta
 	if barWidth < 1 {
 		barWidth = 1
 	}
-	if numBars != state.lastNumBars || state.winW != state.lastWinW || state.winH != state.lastWinH {
-		renderer.SetDrawColor(0, 0, 0, 255)
-		renderer.Clear()
-		state.lastNumBars = numBars
-		state.lastWinW, state.lastWinH = state.winW, state.winH
-	}
+	// Always clear the entire window before drawing. SDL2 uses double-buffering,
+	// so skipping clear leaves stale content in the back buffer. Additionally,
+	// integer division (winW / numBars) can leave remainder pixels at the right
+	// edge that no bar covers.
+	renderer.SetDrawColor(0, 0, 0, 255)
+	renderer.Clear()
 	drawBars(renderer, snap, cfg, state, barWidth)
 }
 

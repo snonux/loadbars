@@ -531,3 +531,371 @@ func TestRemainderPixels_AfterToggleMem(t *testing.T) {
 	// Sanity: a drawn bar area should still have correct content
 	assertPixelColor(t, surface, 185, 95, constants.DarkGrey, 5, "last mem bar has content")
 }
+
+// --- Hotkey handler tests ---
+
+// newHotkeyTestEnv creates a test environment with 1 host, 2 CPU cores, memory,
+// and 2 net interfaces. Returns all components needed for handleKey + drawFrame
+// pixel inspection tests.
+func newHotkeyTestEnv(t *testing.T, showCores, showMem, showNet bool) (
+	renderer *sdl.Renderer, surface *sdl.Surface,
+	cfg *config.Config, state *runState, src *mockSource,
+) {
+	t.Helper()
+	const w, h int32 = 200, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg = defaultTestConfig()
+	cfg.ShowCores = showCores
+	cfg.ShowMem = showMem
+	cfg.ShowNet = showNet
+
+	prev, cur := makeCPUPair(50, 30, 20)
+	prev0, cur0 := makeCPUPair(60, 20, 20)
+	prev1, cur1 := makeCPUPair(40, 40, 20)
+
+	src = &mockSource{
+		data: map[string]*stats.HostStats{
+			"host1": {
+				CPU: map[string]collector.CPULine{
+					"cpu":  cur,
+					"cpu0": cur0,
+					"cpu1": cur1,
+				},
+				Mem: map[string]int64{
+					"MemTotal":  1000,
+					"MemFree":   400,
+					"SwapTotal": 1000,
+					"SwapFree":  600,
+				},
+				Net: map[string]stats.NetStamp{
+					"eth0": {B: 12500000, Tb: 6250000, Stamp: 2e9},
+					"wlan0": {B: 1000000, Tb: 500000, Stamp: 2e9},
+				},
+			},
+		},
+	}
+
+	state = newRunState(cfg, w, h)
+	state.prevCPU["host1;cpu"] = prev
+	state.prevCPU["host1;cpu0"] = prev0
+	state.prevCPU["host1;cpu1"] = prev1
+	state.prevNet["host1"] = stats.NetStamp{B: 0, Tb: 0, Stamp: 1e9}
+	state.smoothedNet["host1"] = &struct{ rxPct, txPct float64 }{
+		rxPct: 10, txPct: 5,
+	}
+	state.smoothedMem["host1"] = &struct{ ramUsed, swapUsed float64 }{
+		ramUsed: 60, swapUsed: 40,
+	}
+
+	return renderer, surface, cfg, state, src
+}
+
+func TestHandleKey_Quit(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	if !handleKey(sdl.K_q, nil, cfg, state) {
+		t.Error("expected handleKey(q) to return true (quit)")
+	}
+}
+
+func TestHandleKey_UnknownKey(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	if handleKey(sdl.K_x, nil, cfg, state) {
+		t.Error("expected handleKey(x) to return false")
+	}
+	// State should be unchanged
+	if state.showCores != cfg.ShowCores || state.showMem != cfg.ShowMem || state.showNet != cfg.ShowNet {
+		t.Error("unknown key should not change state")
+	}
+}
+
+func TestHandleKey_ToggleCores(t *testing.T) {
+	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, false)
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	// Before: showCores=false → 1 CPU bar (aggregate)
+	drawFrame(renderer, src, cfg, state)
+	// The single bar spans full width; check it has color at x=100
+	assertPixelColor(t, surface, 100, 95, constants.Blue, 5, "aggregate CPU bar before toggle")
+
+	// Press '1' to toggle cores on
+	handleKey(sdl.K_1, nil, cfg, state)
+	if !state.showCores {
+		t.Fatal("expected showCores=true after pressing 1")
+	}
+
+	// After: showCores=true → 3 CPU bars (cpu + cpu0 + cpu1)
+	drawFrame(renderer, src, cfg, state)
+	// With 3 bars at width 200: barWidth=66, bars at x=0, x=66, x=132
+	// Third bar (cpu1) should have color
+	assertPixelColor(t, surface, 140, 95, constants.Blue, 5, "cpu1 bar after toggle")
+}
+
+func TestHandleKey_ToggleMem(t *testing.T) {
+	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, false)
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	// Before: no mem bar
+	drawFrame(renderer, src, cfg, state)
+
+	// Press '2' to toggle mem on
+	handleKey(sdl.K_2, nil, cfg, state)
+	if !state.showMem {
+		t.Fatal("expected showMem=true after pressing 2")
+	}
+
+	// After: CPU bar + mem bar = 2 bars, each 100px wide
+	drawFrame(renderer, src, cfg, state)
+	// Mem bar starts at x=100, left half is RAM (DarkGrey at bottom for 60% used)
+	assertPixelColor(t, surface, 110, 95, constants.DarkGrey, 5, "mem bar RAM after toggle")
+}
+
+func TestHandleKey_ToggleNet(t *testing.T) {
+	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, false)
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	drawFrame(renderer, src, cfg, state)
+
+	// Press '3' to toggle net on
+	handleKey(sdl.K_3, nil, cfg, state)
+	if !state.showNet {
+		t.Fatal("expected showNet=true after pressing 3")
+	}
+
+	// After: CPU bar + net bar = 2 bars, each 100px wide
+	drawFrame(renderer, src, cfg, state)
+	// Net bar starts at x=100, RX (left half from top): LightGreen
+	assertPixelColor(t, surface, 110, 2, constants.LightGreen, 5, "net bar RX after toggle")
+}
+
+func TestHandleKey_ToggleExtended(t *testing.T) {
+	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, false)
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	// Before: extended=false, no peak line
+	if state.extended {
+		t.Fatal("expected extended=false initially")
+	}
+
+	// Press 'e' to enable extended/peak line
+	handleKey(sdl.K_e, nil, cfg, state)
+	if !state.extended {
+		t.Fatal("expected extended=true after pressing e")
+	}
+
+	// After: peak line should appear. Draw two frames so peak history builds up.
+	drawFrame(renderer, src, cfg, state)
+	drawFrame(renderer, src, cfg, state)
+	// CPU is 80% (50 system + 30 user), peak line at y = 100 - 80 = 20
+	peakY := int32(100 - 80)
+	r, g, b := getPixelColor(surface, 100, peakY)
+	// Peak line should be orange (80% > UserOrangeThreshold)
+	if r == 0 && g == 0 && b == 0 {
+		t.Errorf("expected peak line at y=%d after toggle, got black", peakY)
+	}
+}
+
+func TestHandleKey_CPUAverage(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.CPUAverage = 5
+	state := newRunState(cfg, 200, 100)
+
+	// 'a' increases CPU average
+	handleKey(sdl.K_a, nil, cfg, state)
+	if cfg.CPUAverage != 6 {
+		t.Errorf("expected CPUAverage=6 after 'a', got %d", cfg.CPUAverage)
+	}
+
+	// 'y' decreases CPU average
+	handleKey(sdl.K_y, nil, cfg, state)
+	if cfg.CPUAverage != 5 {
+		t.Errorf("expected CPUAverage=5 after 'y', got %d", cfg.CPUAverage)
+	}
+
+	// 'y' should clamp at 1
+	cfg.CPUAverage = 1
+	handleKey(sdl.K_y, nil, cfg, state)
+	if cfg.CPUAverage != 1 {
+		t.Errorf("expected CPUAverage=1 (clamped), got %d", cfg.CPUAverage)
+	}
+}
+
+func TestHandleKey_NetAverage(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.NetAverage = 5
+	state := newRunState(cfg, 200, 100)
+
+	// 'd' increases net average
+	handleKey(sdl.K_d, nil, cfg, state)
+	if cfg.NetAverage != 6 {
+		t.Errorf("expected NetAverage=6 after 'd', got %d", cfg.NetAverage)
+	}
+
+	// 'c' decreases net average
+	handleKey(sdl.K_c, nil, cfg, state)
+	if cfg.NetAverage != 5 {
+		t.Errorf("expected NetAverage=5 after 'c', got %d", cfg.NetAverage)
+	}
+
+	// 'c' should clamp at 1
+	cfg.NetAverage = 1
+	handleKey(sdl.K_c, nil, cfg, state)
+	if cfg.NetAverage != 1 {
+		t.Errorf("expected NetAverage=1 (clamped), got %d", cfg.NetAverage)
+	}
+}
+
+func TestHandleKey_CycleNet(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+
+	handleKey(sdl.K_n, nil, cfg, state)
+	if !state.cycleNetNext {
+		t.Error("expected cycleNetNext=true after pressing 'n'")
+	}
+}
+
+func TestHandleKey_WriteConfig(t *testing.T) {
+	// Set HOME to a temp dir so we don't touch real ~/.loadbarsrc
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	// Modify state values that should be copied to config
+	state.showCores = true
+	state.showMem = true
+	state.showNet = true
+	state.extended = true
+
+	handleKey(sdl.K_w, nil, cfg, state)
+
+	if !cfg.ShowCores {
+		t.Error("expected ShowCores=true in config after 'w'")
+	}
+	if !cfg.ShowMem {
+		t.Error("expected ShowMem=true in config after 'w'")
+	}
+	if !cfg.ShowNet {
+		t.Error("expected ShowNet=true in config after 'w'")
+	}
+	if !cfg.Extended {
+		t.Error("expected Extended=true in config after 'w'")
+	}
+}
+
+func TestHandleKey_LinkScaleUp(t *testing.T) {
+	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, true)
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	cfg.NetLink = "100mbit"
+
+	// Draw before: net bar with 100mbit scale
+	drawFrame(renderer, src, cfg, state)
+
+	// Press 'f' to scale up
+	handleKey(sdl.K_f, nil, cfg, state)
+	if cfg.NetLink != "gbit" {
+		t.Errorf("expected NetLink=gbit after 'f', got %s", cfg.NetLink)
+	}
+
+	// Draw after: same traffic, higher link → smaller bars
+	drawFrame(renderer, src, cfg, state)
+
+	// At 10gbit, pressing 'f' should clamp
+	cfg.NetLink = "10gbit"
+	handleKey(sdl.K_f, nil, cfg, state)
+	if cfg.NetLink != "10gbit" {
+		t.Errorf("expected NetLink=10gbit (clamped), got %s", cfg.NetLink)
+	}
+}
+
+func TestHandleKey_LinkScaleDown(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.NetLink = "gbit"
+	state := newRunState(cfg, 200, 100)
+
+	handleKey(sdl.K_v, nil, cfg, state)
+	if cfg.NetLink != "100mbit" {
+		t.Errorf("expected NetLink=100mbit after 'v', got %s", cfg.NetLink)
+	}
+
+	// At mbit, pressing 'v' should clamp
+	cfg.NetLink = "mbit"
+	handleKey(sdl.K_v, nil, cfg, state)
+	if cfg.NetLink != "mbit" {
+		t.Errorf("expected NetLink=mbit (clamped), got %s", cfg.NetLink)
+	}
+}
+
+func TestHandleKey_ArrowResize(t *testing.T) {
+	// Arrow keys require a window for SetSize. Create a real dummy SDL window.
+	window, err := sdl.CreateWindow("test", 0, 0, 200, 100, sdl.WINDOW_HIDDEN)
+	if err != nil {
+		t.Skipf("cannot create SDL window in test environment: %v", err)
+	}
+	defer window.Destroy()
+
+	cfg := defaultTestConfig()
+	cfg.MaxWidth = 500
+	state := newRunState(cfg, 200, 100)
+
+	// Right arrow → width +100
+	handleKey(sdl.K_RIGHT, window, cfg, state)
+	if state.winW != 300 {
+		t.Errorf("expected winW=300 after right arrow, got %d", state.winW)
+	}
+
+	// Left arrow → width -100
+	handleKey(sdl.K_LEFT, window, cfg, state)
+	if state.winW != 200 {
+		t.Errorf("expected winW=200 after left arrow, got %d", state.winW)
+	}
+
+	// Left arrow past minimum → clamp at 1
+	state.winW = 50
+	handleKey(sdl.K_LEFT, window, cfg, state)
+	if state.winW != 1 {
+		t.Errorf("expected winW=1 (clamped), got %d", state.winW)
+	}
+
+	// Right arrow past MaxWidth → clamp at MaxWidth
+	state.winW = 450
+	handleKey(sdl.K_RIGHT, window, cfg, state)
+	if state.winW != 500 {
+		t.Errorf("expected winW=500 (clamped at MaxWidth), got %d", state.winW)
+	}
+
+	// Up arrow → height -100
+	state.winH = 200
+	handleKey(sdl.K_UP, window, cfg, state)
+	if state.winH != 100 {
+		t.Errorf("expected winH=100 after up arrow, got %d", state.winH)
+	}
+
+	// Down arrow → height +100
+	handleKey(sdl.K_DOWN, window, cfg, state)
+	if state.winH != 200 {
+		t.Errorf("expected winH=200 after down arrow, got %d", state.winH)
+	}
+
+	// Up arrow past minimum → clamp at 1
+	state.winH = 50
+	handleKey(sdl.K_UP, window, cfg, state)
+	if state.winH != 1 {
+		t.Errorf("expected winH=1 (clamped), got %d", state.winH)
+	}
+}

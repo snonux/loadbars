@@ -174,6 +174,10 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 			cfg.NetAverage--
 		}
 		fmt.Println("==> Net average samples:", cfg.NetAverage)
+	case sdl.K_f:
+		scaleLinkUp(cfg)
+	case sdl.K_v:
+		scaleLinkDown(cfg)
 	case sdl.K_h:
 		printHotkeys()
 	case sdl.K_n:
@@ -553,6 +557,43 @@ func printNetInterfaceHelp(snap map[string]*stats.HostStats, cfg *config.Config,
 }
 
 // netLinkBytesPerSec returns link speed in bytes/sec from cfg.NetLink (e.g. "gbit", "10gbit", "100mbit", or numeric mbit).
+
+// linkScales lists the supported network link speeds in ascending order,
+// used by the f/v hotkeys to cycle through link scale values.
+var linkScales = []string{"mbit", "10mbit", "100mbit", "gbit", "10gbit"}
+
+// scaleLinkUp moves cfg.NetLink to the next higher link speed in linkScales.
+// Clamps at the maximum (10gbit).
+func scaleLinkUp(cfg *config.Config) {
+	idx := linkScaleIndex(cfg.NetLink)
+	if idx < len(linkScales)-1 {
+		cfg.NetLink = linkScales[idx+1]
+	}
+	fmt.Println("==> Link scale:", cfg.NetLink)
+}
+
+// scaleLinkDown moves cfg.NetLink to the next lower link speed in linkScales.
+// Clamps at the minimum (mbit).
+func scaleLinkDown(cfg *config.Config) {
+	idx := linkScaleIndex(cfg.NetLink)
+	if idx > 0 {
+		cfg.NetLink = linkScales[idx-1]
+	}
+	fmt.Println("==> Link scale:", cfg.NetLink)
+}
+
+// linkScaleIndex returns the index of the current NetLink value in linkScales.
+// Defaults to 3 (gbit) if the value is not recognized.
+func linkScaleIndex(netLink string) int {
+	s := strings.ToLower(strings.TrimSpace(netLink))
+	for i, v := range linkScales {
+		if s == v {
+			return i
+		}
+	}
+	return 3 // default: gbit
+}
+
 func netLinkBytesPerSec(cfg *config.Config) int64 {
 	s := strings.ToLower(strings.TrimSpace(cfg.NetLink))
 	switch s {

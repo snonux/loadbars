@@ -817,6 +817,7 @@ func TestHandleKey_WriteConfig(t *testing.T) {
 	cfg := defaultTestConfig()
 	state := newRunState(cfg, 200, 100)
 	// Modify state values that should be copied to config
+	state.showAvgLine = true
 	state.showCores = true
 	state.showMem = true
 	state.showNet = true
@@ -824,6 +825,9 @@ func TestHandleKey_WriteConfig(t *testing.T) {
 
 	handleKey(sdl.K_w, nil, cfg, state)
 
+	if !cfg.ShowAvgLine {
+		t.Error("expected ShowAvgLine=true in config after 'w'")
+	}
 	if !cfg.ShowCores {
 		t.Error("expected ShowCores=true in config after 'w'")
 	}
@@ -880,6 +884,131 @@ func TestHandleKey_LinkScaleDown(t *testing.T) {
 	handleKey(sdl.K_v, nil, cfg, state)
 	if cfg.NetLink != "mbit" {
 		t.Errorf("expected NetLink=mbit (clamped), got %s", cfg.NetLink)
+	}
+}
+
+func TestHandleKey_ToggleAvgLine(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	if state.showAvgLine {
+		t.Fatal("expected showAvgLine=false initially")
+	}
+	handleKey(sdl.K_g, nil, cfg, state)
+	if !state.showAvgLine {
+		t.Fatal("expected showAvgLine=true after pressing g")
+	}
+	handleKey(sdl.K_g, nil, cfg, state)
+	if state.showAvgLine {
+		t.Fatal("expected showAvgLine=false after pressing g again")
+	}
+}
+
+func TestGlobalAvgLine_SingleHost(t *testing.T) {
+	// One host at 80% CPU → red line at y = 100 - 80 = 20
+	const w, h int32 = 100, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	prev, cur := makeCPUPair(40, 40, 20) // 80% used (40 sys + 40 user)
+	cfg := defaultTestConfig()
+	cfg.ShowCores = false
+	cfg.ShowMem = false
+	cfg.ShowNet = false
+
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"host1": {CPU: map[string]collector.CPULine{"cpu": cur}},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.showAvgLine = true
+	state.prevCPU["host1;cpu"] = prev
+
+	drawFrame(renderer, src, cfg, state)
+
+	// Red line at y=20 (100 - 80%)
+	assertPixelColor(t, surface, 50, 20, constants.Red, 3, "avg line at y=20")
+	// Check it spans the full width
+	assertPixelColor(t, surface, 0, 20, constants.Red, 3, "avg line at x=0")
+	assertPixelColor(t, surface, 99, 20, constants.Red, 3, "avg line at x=99")
+}
+
+func TestGlobalAvgLine_MultiHost(t *testing.T) {
+	// Two hosts: 80% + 40% → average 60% → red line at y = 100 - 60 = 40
+	const w, h int32 = 100, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	prev1, cur1 := makeCPUPair(40, 40, 20) // 80% used
+	prev2, cur2 := makeCPUPair(20, 20, 60) // 40% used
+
+	cfg := defaultTestConfig()
+	cfg.ShowCores = false
+	cfg.ShowMem = false
+	cfg.ShowNet = false
+
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"alpha": {CPU: map[string]collector.CPULine{"cpu": cur1}},
+			"beta":  {CPU: map[string]collector.CPULine{"cpu": cur2}},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.showAvgLine = true
+	state.prevCPU["alpha;cpu"] = prev1
+	state.prevCPU["beta;cpu"] = prev2
+
+	drawFrame(renderer, src, cfg, state)
+
+	// Average 60% → line at y=40
+	assertPixelColor(t, surface, 50, 40, constants.Red, 3, "avg line at y=40")
+}
+
+func TestGlobalAvgLine_Disabled(t *testing.T) {
+	// With showAvgLine=false, the line position should remain black (background)
+	const w, h int32 = 100, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	prev, cur := makeCPUPair(40, 40, 20) // 80% used
+	cfg := defaultTestConfig()
+	cfg.ShowCores = false
+	cfg.ShowMem = false
+	cfg.ShowNet = false
+
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"host1": {CPU: map[string]collector.CPULine{"cpu": cur}},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.showAvgLine = false
+	state.prevCPU["host1;cpu"] = prev
+
+	drawFrame(renderer, src, cfg, state)
+
+	// At y=20, the CPU bar has user color (yellow), not red
+	r, g, b := getPixelColor(surface, 50, 20)
+	if r == constants.Red.R && g == constants.Red.G && b == constants.Red.B {
+		t.Errorf("expected no red avg line at y=20 when disabled, got RGB(%d,%d,%d)", r, g, b)
 	}
 }
 

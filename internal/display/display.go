@@ -21,6 +21,7 @@ const smoothFactor = 0.12 // blend toward target each frame; lower = smoother
 
 // runState holds mutable state across the display loop (hotkeys, window size, smoothed data).
 type runState struct {
+	showAvgLine bool
 	showCores   bool
 	showMem     bool
 	showNet     bool
@@ -38,6 +39,7 @@ type runState struct {
 // newRunState builds initial run state from config.
 func newRunState(cfg *config.Config, winW, winH int32) *runState {
 	return &runState{
+		showAvgLine: cfg.ShowAvgLine,
 		showCores:   cfg.ShowCores,
 		showMem:     cfg.ShowMem,
 		showNet:     cfg.ShowNet,
@@ -150,6 +152,9 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 	case sdl.K_e:
 		state.extended = !state.extended
 		fmt.Println("==> Toggled extended (peak line):", state.extended)
+	case sdl.K_g:
+		state.showAvgLine = !state.showAvgLine
+		fmt.Println("==> Toggled global avg line:", state.showAvgLine)
 	case sdl.K_a:
 		cfg.CPUAverage++
 		fmt.Println("==> CPU average samples:", cfg.CPUAverage)
@@ -173,6 +178,7 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 	case sdl.K_h:
 		printHotkeys()
 	case sdl.K_w:
+		cfg.ShowAvgLine = state.showAvgLine
 		cfg.ShowCores = state.showCores
 		cfg.ShowMem = state.showMem
 		cfg.ShowNet = state.showNet
@@ -220,6 +226,7 @@ func barBounds(winW int32, numBars int, barIndex int) (x int32, width int32) {
 }
 
 // drawFrame updates state from snapshot, clears if layout changed, and draws all bars.
+// When showAvgLine is enabled, a global average CPU line is drawn on top.
 func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, state *runState) {
 	snap := src.Snapshot()
 	numBars := countBars(snap, state.showCores, state.showMem, state.showNet)
@@ -228,6 +235,9 @@ func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, sta
 	renderer.SetDrawColor(0, 0, 0, 255)
 	renderer.Clear()
 	drawBars(renderer, snap, cfg, state, numBars)
+	if state.showAvgLine {
+		drawGlobalAvgLine(renderer, snap, state)
+	}
 }
 
 func countBars(snap map[string]*stats.HostStats, showCores, showMem, showNet bool) int {
@@ -259,6 +269,47 @@ func drawBars(renderer *sdl.Renderer, snap map[string]*stats.HostStats, cfg *con
 		}
 		drawHostBars(renderer, h, host, cfg, state, numBars, &barIndex)
 	}
+}
+
+// drawGlobalAvgLine draws a 1px red horizontal line spanning the full window width
+// at the Y position corresponding to the mean CPU usage across all hosts.
+// CPU usage per host is the sum of all smoothed segments except idle (index 3).
+func drawGlobalAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStats, state *runState) {
+	var totalUsage float64
+	var hostCount int
+	for _, host := range sortedHosts(snap) {
+		h := snap[host]
+		if h == nil {
+			continue
+		}
+		key := host + ";cpu"
+		s := state.smoothedCPU[key]
+		if s == nil {
+			continue
+		}
+		// Sum all segments except idle (index 3) to get total CPU usage
+		var usage float64
+		for i := 0; i < 9; i++ {
+			if i != 3 {
+				usage += (*s)[i]
+			}
+		}
+		totalUsage += usage
+		hostCount++
+	}
+	if hostCount == 0 {
+		return
+	}
+	avgPct := totalUsage / float64(hostCount)
+	lineY := state.winH - int32(avgPct*float64(state.winH)/100)
+	if lineY < 0 {
+		lineY = 0
+	}
+	if lineY >= state.winH {
+		lineY = state.winH - 1
+	}
+	renderer.SetDrawColor(constants.Red.R, constants.Red.G, constants.Red.B, 255)
+	renderer.FillRect(&sdl.Rect{X: 0, Y: lineY, W: state.winW, H: 1})
 }
 
 // drawHostBars draws CPU, mem, and net bars for one host and advances barIndex.
@@ -513,7 +564,7 @@ func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *st
 }
 
 func printHotkeys() {
-	fmt.Println("=> Hotkeys: 1=cores 2=mem 3=net e=extended h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
+	fmt.Println("=> Hotkeys: 1=cores 2=mem 3=net e=extended g=avg line h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
 }
 
 

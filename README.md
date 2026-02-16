@@ -111,6 +111,7 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 | **2** | Toggle memory bars (RAM left, Swap right per host) |
 | **3** | Toggle network bars (RX/TX summed across all non-lo interfaces per host) |
 | **e** | Toggle extended display (1px peak line on CPU bars: max system+user over last samples) |
+| **g** | Toggle global average CPU line (1px red line showing mean CPU usage across all hosts) |
 | **h** | Print hotkey list to stdout |
 | **q** | Quit |
 | **w** | Write current settings to ~/.loadbarsrc |

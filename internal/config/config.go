@@ -24,8 +24,9 @@ type Config struct {
 	MaxWidth   int
 	NetAverage int
 	NetLink    string
-	ShowAvgLine bool
-	ShowCores   bool
+	ShowAvgLine   bool
+	ShowIOAvgLine bool
+	ShowCores     bool
 	ShowMem     bool
 	ShowNet     bool
 	SSHOpts    string
@@ -105,7 +106,7 @@ func (c *Config) parseReader(f *os.File) error {
 		"title": true, "barwidth": true, "cpuaverage": true, "extended": true,
 		"hasagent": true, "height": true, "maxwidth": true, "netaverage": true,
 		"netlink": true, "showcores": true, "showmem": true,
-		"showavgline": true, "shownet": true, "sshopts": true, "cluster": true,
+		"showavgline": true, "showioavgline": true, "shownet": true, "sshopts": true, "cluster": true,
 	}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -162,6 +163,8 @@ func (c *Config) set(key, val string) {
 		c.NetLink = val
 	case "showavgline":
 		c.ShowAvgLine = parseBool(val)
+	case "showioavgline":
+		c.ShowIOAvgLine = parseBool(val)
 	case "showcores":
 		c.ShowCores = parseBool(val)
 	case "showmem":
@@ -200,6 +203,7 @@ func (c *Config) writeTo(f *os.File) error {
 	writeInt("netaverage", c.NetAverage)
 	writeStr("netlink", c.NetLink)
 	writeBool("showavgline", c.ShowAvgLine)
+	writeBool("showioavgline", c.ShowIOAvgLine)
 	writeBool("showcores", c.ShowCores)
 	writeBool("showmem", c.ShowMem)
 	writeBool("shownet", c.ShowNet)

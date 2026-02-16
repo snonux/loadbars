@@ -710,6 +710,23 @@ func TestHandleKey_ToggleMem(t *testing.T) {
 	assertPixelColor(t, surface, 110, 95, constants.DarkGrey, 5, "mem bar RAM after toggle")
 }
 
+func TestHandleKey_ToggleMemAlias(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	if state.showMem {
+		t.Fatal("expected showMem=false initially")
+	}
+	// 'm' should toggle mem just like '2'
+	handleKey(sdl.K_m, nil, cfg, state)
+	if !state.showMem {
+		t.Fatal("expected showMem=true after pressing m")
+	}
+	handleKey(sdl.K_m, nil, cfg, state)
+	if state.showMem {
+		t.Fatal("expected showMem=false after pressing m again")
+	}
+}
+
 func TestHandleKey_ToggleNet(t *testing.T) {
 	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, false)
 	defer renderer.Destroy()
@@ -727,6 +744,23 @@ func TestHandleKey_ToggleNet(t *testing.T) {
 	drawFrame(renderer, src, cfg, state)
 	// Net bar starts at x=100, RX (left half from top): LightGreen
 	assertPixelColor(t, surface, 110, 2, constants.LightGreen, 5, "net bar RX after toggle")
+}
+
+func TestHandleKey_ToggleNetAlias(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	if state.showNet {
+		t.Fatal("expected showNet=false initially")
+	}
+	// 'n' should toggle net just like '3'
+	handleKey(sdl.K_n, nil, cfg, state)
+	if !state.showNet {
+		t.Fatal("expected showNet=true after pressing n")
+	}
+	handleKey(sdl.K_n, nil, cfg, state)
+	if state.showNet {
+		t.Fatal("expected showNet=false after pressing n again")
+	}
 }
 
 func TestHandleKey_ToggleExtended(t *testing.T) {
@@ -1068,5 +1102,167 @@ func TestHandleKey_ArrowResize(t *testing.T) {
 	handleKey(sdl.K_UP, window, cfg, state)
 	if state.winH != 1 {
 		t.Errorf("expected winH=1 (clamped), got %d", state.winH)
+	}
+}
+
+// makeCPUPairWithIO creates a (prev, cur) pair where the delta yields the desired
+// system, user, idle, iowait, irq, and softirq percentages.
+func makeCPUPairWithIO(systemPct, userPct, idlePct, iowaitPct, irqPct, softirqPct float64) (prev, cur collector.CPULine) {
+	const base = 1000
+	const delta = 1000
+	prev = collector.CPULine{Idle: base}
+	dSys := int64(systemPct * float64(delta) / 100)
+	dUser := int64(userPct * float64(delta) / 100)
+	dIdle := int64(idlePct * float64(delta) / 100)
+	dIowait := int64(iowaitPct * float64(delta) / 100)
+	dIRQ := int64(irqPct * float64(delta) / 100)
+	dSoftIRQ := int64(softirqPct * float64(delta) / 100)
+	dNice := delta - dSys - dUser - dIdle - dIowait - dIRQ - dSoftIRQ
+	if dNice < 0 {
+		dNice = 0
+	}
+	cur = collector.CPULine{
+		System:  prev.System + dSys,
+		User:    prev.User + dUser,
+		Idle:    prev.Idle + dIdle,
+		Nice:    prev.Nice + dNice,
+		Iowait:  prev.Iowait + dIowait,
+		IRQ:     prev.IRQ + dIRQ,
+		SoftIRQ: prev.SoftIRQ + dSoftIRQ,
+	}
+	return prev, cur
+}
+
+func TestHandleKey_ToggleIOAvgLine(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	if state.showIOAvgLine {
+		t.Fatal("expected showIOAvgLine=false initially")
+	}
+	handleKey(sdl.K_i, nil, cfg, state)
+	if !state.showIOAvgLine {
+		t.Fatal("expected showIOAvgLine=true after pressing i")
+	}
+	handleKey(sdl.K_i, nil, cfg, state)
+	if state.showIOAvgLine {
+		t.Fatal("expected showIOAvgLine=false after pressing i again")
+	}
+}
+
+func TestGlobalIOAvgLine_SingleHost(t *testing.T) {
+	// One host with 20% iowait + 5% irq + 5% softirq = 30% → pink line at y=30 from top
+	const w, h int32 = 100, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	prev, cur := makeCPUPairWithIO(10, 10, 20, 20, 5, 5)
+	cfg := defaultTestConfig()
+
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"host1": {CPU: map[string]collector.CPULine{"cpu": cur}},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.showIOAvgLine = true
+	state.prevCPU["host1;cpu"] = prev
+
+	drawFrame(renderer, src, cfg, state)
+
+	// Pink line at y=30 (30% from top in a 100px window)
+	assertPixelColor(t, surface, 50, 30, constants.Pink, 3, "IO avg line at y=30")
+	// Spans full width
+	assertPixelColor(t, surface, 0, 30, constants.Pink, 3, "IO avg line at x=0")
+	assertPixelColor(t, surface, 99, 30, constants.Pink, 3, "IO avg line at x=99")
+}
+
+func TestGlobalIOAvgLine_MultiHost(t *testing.T) {
+	// Two hosts: host1=30% IO, host2=0% IO → average 15% → pink line at y=15
+	const w, h int32 = 100, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	prev1, cur1 := makeCPUPairWithIO(10, 10, 20, 20, 5, 5) // 30% IO
+	prev2, cur2 := makeCPUPair(40, 40, 20)                   // 0% IO
+
+	cfg := defaultTestConfig()
+
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"alpha": {CPU: map[string]collector.CPULine{"cpu": cur1}},
+			"beta":  {CPU: map[string]collector.CPULine{"cpu": cur2}},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.showIOAvgLine = true
+	state.prevCPU["alpha;cpu"] = prev1
+	state.prevCPU["beta;cpu"] = prev2
+
+	drawFrame(renderer, src, cfg, state)
+
+	// Average 15% → pink line at y=15
+	assertPixelColor(t, surface, 50, 15, constants.Pink, 3, "IO avg line at y=15")
+}
+
+func TestGlobalIOAvgLine_Disabled(t *testing.T) {
+	// With showIOAvgLine=false, no pink line should appear
+	const w, h int32 = 100, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	prev, cur := makeCPUPairWithIO(10, 10, 20, 20, 5, 5) // 30% IO
+	cfg := defaultTestConfig()
+
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"host1": {CPU: map[string]collector.CPULine{"cpu": cur}},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.showIOAvgLine = false
+	state.prevCPU["host1;cpu"] = prev
+
+	drawFrame(renderer, src, cfg, state)
+
+	// At y=30, there should be no pink line
+	r, g, b := getPixelColor(surface, 50, 30)
+	if r == constants.Pink.R && g == constants.Pink.G && b == constants.Pink.B {
+		t.Errorf("expected no pink IO avg line at y=30 when disabled, got RGB(%d,%d,%d)", r, g, b)
+	}
+}
+
+func TestHandleKey_WriteConfig_IOAvgLine(t *testing.T) {
+	// Verify that 'w' hotkey persists showIOAvgLine to config
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	state.showIOAvgLine = true
+
+	handleKey(sdl.K_w, nil, cfg, state)
+
+	if !cfg.ShowIOAvgLine {
+		t.Error("expected ShowIOAvgLine=true in config after 'w'")
 	}
 }

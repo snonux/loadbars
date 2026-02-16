@@ -115,6 +115,43 @@ func TestConfig_showAvgLineRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConfig_showIOAvgLineRoundTrip(t *testing.T) {
+	// Write a config with showioavgline=1, read it back, verify round-trip
+	c := Default()
+	c.ShowIOAvgLine = true
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rc")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.writeTo(f); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	f.Close()
+
+	data, _ := os.ReadFile(path)
+	if !bytes.Contains(data, []byte("showioavgline=1")) {
+		t.Errorf("expected showioavgline=1 in output, got:\n%s", data)
+	}
+
+	// Read it back
+	c2 := Default()
+	f2, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f2.Close()
+	if err := c2.parseReader(f2); err != nil {
+		t.Fatal(err)
+	}
+	if !c2.ShowIOAvgLine {
+		t.Error("expected ShowIOAvgLine=true after round-trip")
+	}
+}
+
 func TestGetClusterHostsFromFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "clusters")

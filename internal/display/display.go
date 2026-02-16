@@ -25,8 +25,9 @@ type runState struct {
 	showIOAvgLine bool
 	showCores     bool
 	showMem     bool
-	showNet     bool
-	extended    bool
+	showNet        bool
+	showSeparators bool
+	extended       bool
 	winW        int32
 	winH        int32
 	prevCPU     map[string]collector.CPULine
@@ -44,8 +45,9 @@ func newRunState(cfg *config.Config, winW, winH int32) *runState {
 		showIOAvgLine: cfg.ShowIOAvgLine,
 		showCores:     cfg.ShowCores,
 		showMem:     cfg.ShowMem,
-		showNet:     cfg.ShowNet,
-		extended:    cfg.Extended,
+		showNet:        cfg.ShowNet,
+		showSeparators: cfg.ShowSeparators,
+		extended:       cfg.Extended,
 		winW:        winW,
 		winH:        winH,
 		prevCPU:     make(map[string]collector.CPULine),
@@ -160,6 +162,9 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 	case sdl.K_i:
 		state.showIOAvgLine = !state.showIOAvgLine
 		fmt.Println("==> Toggled global I/O avg line:", state.showIOAvgLine)
+	case sdl.K_s:
+		state.showSeparators = !state.showSeparators
+		fmt.Println("==> Toggled host separators:", state.showSeparators)
 	case sdl.K_a:
 		cfg.CPUAverage++
 		fmt.Println("==> CPU average samples:", cfg.CPUAverage)
@@ -188,6 +193,7 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 		cfg.ShowCores = state.showCores
 		cfg.ShowMem = state.showMem
 		cfg.ShowNet = state.showNet
+		cfg.ShowSeparators = state.showSeparators
 		cfg.Extended = state.extended
 		if err := cfg.Write(); err != nil {
 			fmt.Fprintf(os.Stderr, "!!! Write config: %v\n", err)
@@ -271,12 +277,25 @@ func countBars(snap map[string]*stats.HostStats, showCores, showMem, showNet boo
 // drawBars draws CPU, memory, and network bars for all hosts in snap.
 func drawBars(renderer *sdl.Renderer, snap map[string]*stats.HostStats, cfg *config.Config, state *runState, numBars int) {
 	barIndex := 0
-	for _, host := range sortedHosts(snap) {
+	hosts := sortedHosts(snap)
+	// Track where each host's bars end so we can draw separators after all bars
+	var separatorXs []int32
+	for i, host := range hosts {
 		h := snap[host]
 		if h == nil {
 			continue
 		}
 		drawHostBars(renderer, h, host, cfg, state, numBars, &barIndex)
+		// Record separator position between hosts (not after the last one)
+		if state.showSeparators && i < len(hosts)-1 {
+			sepX, _ := barBounds(state.winW, numBars, barIndex)
+			separatorXs = append(separatorXs, sepX)
+		}
+	}
+	// Draw 1px yellow vertical separators on top of all bars
+	for _, sepX := range separatorXs {
+		renderer.SetDrawColor(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, 255)
+		renderer.FillRect(&sdl.Rect{X: sepX, Y: 0, W: 1, H: state.winH})
 	}
 }
 
@@ -611,7 +630,7 @@ func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *st
 }
 
 func printHotkeys() {
-	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net e=extended g=avg line i=io avg h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
+	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
 }
 
 

@@ -28,8 +28,9 @@ type Config struct {
 	ShowIOAvgLine bool
 	ShowCores     bool
 	ShowMem     bool
-	ShowNet     bool
-	SSHOpts    string
+	ShowNet        bool
+	ShowSeparators bool
+	SSHOpts        string
 	Cluster    string
 }
 
@@ -106,7 +107,8 @@ func (c *Config) parseReader(f *os.File) error {
 		"title": true, "barwidth": true, "cpuaverage": true, "extended": true,
 		"hasagent": true, "height": true, "maxwidth": true, "netaverage": true,
 		"netlink": true, "showcores": true, "showmem": true,
-		"showavgline": true, "showioavgline": true, "shownet": true, "sshopts": true, "cluster": true,
+		"showavgline": true, "showioavgline": true, "shownet": true, "showseparators": true,
+		"sshopts": true, "cluster": true,
 	}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -171,6 +173,8 @@ func (c *Config) set(key, val string) {
 		c.ShowMem = parseBool(val)
 	case "shownet":
 		c.ShowNet = parseBool(val)
+	case "showseparators":
+		c.ShowSeparators = parseBool(val)
 	case "sshopts":
 		c.SSHOpts = val
 	case "cluster":
@@ -207,6 +211,7 @@ func (c *Config) writeTo(f *os.File) error {
 	writeBool("showcores", c.ShowCores)
 	writeBool("showmem", c.ShowMem)
 	writeBool("shownet", c.ShowNet)
+	writeBool("showseparators", c.ShowSeparators)
 	writeStr("sshopts", c.SSHOpts)
 	writeStr("cluster", c.Cluster)
 	return w.Flush()

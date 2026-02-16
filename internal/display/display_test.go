@@ -1266,3 +1266,151 @@ func TestHandleKey_WriteConfig_IOAvgLine(t *testing.T) {
 		t.Error("expected ShowIOAvgLine=true in config after 'w'")
 	}
 }
+
+func TestHandleKey_ToggleSeparators(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	if state.showSeparators {
+		t.Fatal("expected showSeparators=false initially")
+	}
+	handleKey(sdl.K_s, nil, cfg, state)
+	if !state.showSeparators {
+		t.Fatal("expected showSeparators=true after pressing s")
+	}
+	handleKey(sdl.K_s, nil, cfg, state)
+	if state.showSeparators {
+		t.Fatal("expected showSeparators=false after pressing s again")
+	}
+}
+
+func TestSeparator_TwoHosts_Enabled(t *testing.T) {
+	// Two hosts (100% system = blue) with separators enabled: yellow pixel at boundary
+	const w, h int32 = 200, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	prev1, cur1 := makeCPUPair(100, 0, 0) // all system → blue
+	prev2, cur2 := makeCPUPair(100, 0, 0)
+
+	cfg := defaultTestConfig()
+	cfg.ShowCores = false
+	cfg.ShowMem = false
+	cfg.ShowNet = false
+	cfg.ShowSeparators = true
+
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"alpha": {CPU: map[string]collector.CPULine{"cpu": cur1}},
+			"beta":  {CPU: map[string]collector.CPULine{"cpu": cur2}},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.prevCPU["alpha;cpu"] = prev1
+	state.prevCPU["beta;cpu"] = prev2
+
+	drawFrame(renderer, src, cfg, state)
+
+	// 2 bars at 200px → each 100px. Separator at x=100 (start of second host's bars)
+	assertPixelColor(t, surface, 100, 50, constants.Yellow, 3, "separator yellow at x=100")
+}
+
+func TestSeparator_TwoHosts_Disabled(t *testing.T) {
+	// Two hosts (100% system = blue) with separators disabled: no yellow at boundary
+	const w, h int32 = 200, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	prev1, cur1 := makeCPUPair(100, 0, 0) // all system → blue
+	prev2, cur2 := makeCPUPair(100, 0, 0)
+
+	cfg := defaultTestConfig()
+	cfg.ShowCores = false
+	cfg.ShowMem = false
+	cfg.ShowNet = false
+	cfg.ShowSeparators = false
+
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"alpha": {CPU: map[string]collector.CPULine{"cpu": cur1}},
+			"beta":  {CPU: map[string]collector.CPULine{"cpu": cur2}},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.prevCPU["alpha;cpu"] = prev1
+	state.prevCPU["beta;cpu"] = prev2
+
+	drawFrame(renderer, src, cfg, state)
+
+	// At x=100, should be blue (second host's system bar), NOT yellow separator
+	assertPixelColor(t, surface, 100, 50, constants.Blue, 3, "no separator, should be blue")
+}
+
+func TestSeparator_SingleHost(t *testing.T) {
+	// Single host: no separator should be drawn even when enabled
+	const w, h int32 = 100, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	prev, cur := makeCPUPair(50, 30, 20)
+	cfg := defaultTestConfig()
+	cfg.ShowCores = false
+	cfg.ShowMem = false
+	cfg.ShowNet = false
+	cfg.ShowSeparators = true
+
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"host1": {CPU: map[string]collector.CPULine{"cpu": cur}},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.prevCPU["host1;cpu"] = prev
+
+	drawFrame(renderer, src, cfg, state)
+
+	// No separator at the edges — just verify no yellow at x=0 or x=99
+	r, g, b := getPixelColor(surface, 0, 50)
+	if r == constants.Yellow.R && g == constants.Yellow.G && b == constants.Yellow.B {
+		t.Errorf("unexpected yellow separator at x=0 with single host")
+	}
+	r, g, b = getPixelColor(surface, 99, 50)
+	if r == constants.Yellow.R && g == constants.Yellow.G && b == constants.Yellow.B {
+		t.Errorf("unexpected yellow separator at x=99 with single host")
+	}
+}
+
+func TestHandleKey_WriteConfig_Separators(t *testing.T) {
+	// Verify that 'w' hotkey persists showSeparators to config
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	state.showSeparators = true
+
+	handleKey(sdl.K_w, nil, cfg, state)
+
+	if !cfg.ShowSeparators {
+		t.Error("expected ShowSeparators=true in config after 'w'")
+	}
+}

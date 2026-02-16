@@ -113,6 +113,7 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 | **e** | Toggle extended display (1px peak line on CPU bars: max system+user over last samples) |
 | **g** | Toggle global average CPU line (1px red line showing mean CPU usage across all hosts) |
 | **i** | Toggle global I/O average line (1px pink line showing mean iowait+IRQ across all hosts) |
+| **s** | Toggle host separator lines (1px yellow vertical line between hosts) |
 | **h** | Print hotkey list to stdout |
 | **q** | Quit |
 | **w** | Write current settings to ~/.loadbarsrc |

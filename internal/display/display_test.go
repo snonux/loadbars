@@ -513,14 +513,13 @@ func TestNetBar_NoInterface(t *testing.T) {
 }
 
 func TestRemainderPixels_AfterToggleMem(t *testing.T) {
-	// Reproduces bug: with double-buffering, the back buffer retains stale
-	// content from before a layout change. drawFrame must always clear the
-	// entire window so remainder pixels (from integer division winW/numBars)
-	// don't show old CPU bar fragments.
+	// Tests that bars fill the entire window width (no remainder pixels).
+	// With double-buffering, the back buffer retains stale content from
+	// before a layout change. drawFrame must overwrite the entire window.
 	//
-	// We simulate the stale back-buffer by manually painting the remainder
-	// area with a bright color before calling drawFrame, then verifying
-	// drawFrame clears it to black.
+	// We simulate the stale back-buffer by manually painting with a bright
+	// color before calling drawFrame, then verifying drawFrame properly
+	// overwrites all pixels including the rightmost edge.
 	const w, h int32 = 200, 100
 
 	renderer, surface, err := createTestRenderer(w, h)
@@ -532,7 +531,8 @@ func TestRemainderPixels_AfterToggleMem(t *testing.T) {
 
 	// 4 hosts, each with cpu + 2 cores = 3 CPU names when showCores=true
 	// Plus mem = 4 bars per host → 16 bars total
-	// barWidth = 200/16 = 12, drawn = 192, remainder = 8px (x=192..199)
+	// With remainder distribution: bars alternate between 12 and 13 pixels,
+	// filling all 200 pixels. Bar 15 (last mem) spans x=187..199 (width 13).
 	hosts := map[string]*stats.HostStats{}
 	for _, name := range []string{"host1", "host2", "host3", "host4"} {
 		_, cur := makeCPUPair(50, 30, 20)
@@ -563,27 +563,25 @@ func TestRemainderPixels_AfterToggleMem(t *testing.T) {
 	// Draw one frame so the layout is established (numBars=16)
 	drawFrame(renderer, src, cfg, state)
 
-	// Simulate stale back-buffer content: paint the remainder area bright red.
-	// In real double-buffered SDL, this area would contain old wider-bar content
-	// from before the toggle. If drawFrame doesn't clear every frame, the
-	// remainder keeps this stale color.
+	// Simulate stale back-buffer content: paint rightmost area bright red.
+	// In real double-buffered SDL, this area would contain old content from
+	// before the toggle. drawFrame must clear/overwrite the entire window.
 	renderer.SetDrawColor(255, 0, 0, 255)
-	renderer.FillRect(&sdl.Rect{X: 192, Y: 0, W: 8, H: h})
+	renderer.FillRect(&sdl.Rect{X: 187, Y: 0, W: 13, H: h})
 
 	// Draw a second frame with the SAME layout (no numBars change).
-	// The old code only cleared on layout changes, so this frame would skip
-	// the clear and leave the red remainder pixels intact.
+	// This verifies that drawFrame properly overwrites all pixels, including
+	// the rightmost bar (which now extends to the window edge).
 	drawFrame(renderer, src, cfg, state)
 
-	// The remainder pixels (x=192..199) must be black, not stale red.
-	const tol = 3
-	for x := int32(192); x < w; x++ {
-		assertPixelColor(t, surface, x, 50, constants.Black, tol,
-			fmt.Sprintf("remainder pixel at x=%d must be cleared", x))
-	}
-
-	// Sanity: a drawn bar area should still have correct content
-	assertPixelColor(t, surface, 185, 95, constants.DarkGrey, 5, "last mem bar has content")
+	// Bar 15 (last mem bar) spans x=187..199 (width 13).
+	// Left half (RAM): x=187..192 (halfW=6), right half (swap): x=193..199
+	// Verify RAM portion has proper content (dark grey), not stale red.
+	const tol = 5
+	assertPixelColor(t, surface, 190, 95, constants.DarkGrey, tol, "last mem bar RAM at x=190")
+	assertPixelColor(t, surface, 192, 95, constants.DarkGrey, tol, "last mem bar RAM at x=192")
+	// Rightmost pixel is in swap half; with no swap, it's black (free space)
+	assertPixelColor(t, surface, 199, 95, constants.Black, tol, "rightmost pixel (swap half)")
 }
 
 // --- Hotkey handler tests ---

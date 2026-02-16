@@ -30,7 +30,7 @@ type runState struct {
 	winW        int32
 	winH        int32
 	prevCPU     map[string]collector.CPULine
-	smoothedCPU map[string]*[9]float64
+	smoothedCPU map[string]*[10]float64
 	smoothedMem map[string]*struct{ ramUsed, swapUsed float64 }
 	smoothedNet map[string]*struct{ rxPct, txPct float64 }
 	prevNet     map[string]stats.NetStamp // aggregated (summed) previous net stamp per host
@@ -49,7 +49,7 @@ func newRunState(cfg *config.Config, winW, winH int32) *runState {
 		winW:        winW,
 		winH:        winH,
 		prevCPU:     make(map[string]collector.CPULine),
-		smoothedCPU: make(map[string]*[9]float64),
+		smoothedCPU: make(map[string]*[10]float64),
 		smoothedMem: make(map[string]*struct{ ramUsed, swapUsed float64 }),
 		smoothedNet: make(map[string]*struct{ rxPct, txPct float64 }),
 		prevNet:     make(map[string]stats.NetStamp),
@@ -298,7 +298,7 @@ func drawGlobalAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStats,
 		}
 		// Sum all segments except idle (index 3) to get total CPU usage
 		var usage float64
-		for i := 0; i < 9; i++ {
+		for i := 0; i < 10; i++ {
 			if i != 3 {
 				usage += (*s)[i]
 			}
@@ -369,16 +369,16 @@ func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *
 		target, ok := cpuBarTargetPcts(cur, prev)
 		s := state.smoothedCPU[key]
 		if s == nil {
-			s = &[9]float64{}
+			s = &[10]float64{}
 			state.smoothedCPU[key] = s
 			if ok {
 				*s = target
 			}
 		} else if ok {
-			for i := 0; i < 9; i++ {
+			for i := 0; i < 10; i++ {
 				(*s)[i] += (target[i] - (*s)[i]) * smoothFactor
 			}
-			normalizePcts9(s)
+			normalizePcts(s)
 		}
 		peakPct := peakPctForBar(state, key, cfg.CPUAverage, s)
 		x, barW := barBounds(state.winW, numBars, *barIndex)
@@ -403,7 +403,7 @@ func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *
 	}
 }
 
-func peakPctForBar(state *runState, key string, cpuAvg int, s *[9]float64) float64 {
+func peakPctForBar(state *runState, key string, cpuAvg int, s *[10]float64) float64 {
 	if !state.extended || s == nil {
 		return 0
 	}
@@ -460,7 +460,7 @@ func sortedCPUNames(cpu map[string]collector.CPULine, showCores bool) []string {
 }
 
 // cpuBarTargetPcts returns the 9 segment percentages (system, user, nice, idle, iowait, irq, softirq, guest, steal) from cur/prev delta. ok is false if no valid sample.
-func cpuBarTargetPcts(cur, prev collector.CPULine) (out [9]float64, ok bool) {
+func cpuBarTargetPcts(cur, prev collector.CPULine) (out [10]float64, ok bool) {
 	totalCur := cur.Total()
 	totalPrev := prev.Total()
 	if totalPrev == 0 || totalCur <= totalPrev {
@@ -479,6 +479,7 @@ func cpuBarTargetPcts(cur, prev collector.CPULine) (out [9]float64, ok bool) {
 	out[6] = float64(cur.SoftIRQ-prev.SoftIRQ) / scale
 	out[7] = float64(cur.Guest-prev.Guest) / scale
 	out[8] = float64(cur.Steal-prev.Steal) / scale
+	out[9] = float64(cur.GuestNice-prev.GuestNice) / scale
 	for i := range out {
 		if out[i] < 0 {
 			out[i] = 0
@@ -490,22 +491,22 @@ func cpuBarTargetPcts(cur, prev collector.CPULine) (out [9]float64, ok bool) {
 	return out, true
 }
 
-func normalizePcts9(s *[9]float64) {
+func normalizePcts(s *[10]float64) {
 	var sum float64
-	for i := 0; i < 9; i++ {
+	for i := 0; i < 10; i++ {
 		sum += (*s)[i]
 	}
 	if sum <= 0 {
 		return
 	}
-	for i := 0; i < 9; i++ {
+	for i := 0; i < 10; i++ {
 		(*s)[i] = (*s)[i] * 100 / sum
 	}
 }
 
-// drawCPUBarFromPcts draws one CPU bar from 9 smoothed segment percentages. If s is nil, advances x only.
+// drawCPUBarFromPcts draws one CPU bar from 10 smoothed segment percentages. If s is nil, advances x only.
 // When extended is true and peakPct > 0, draws a 1px peak line (max system+user over history).
-func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[9]float64, barW int32, x int32, winH int32, extended bool, peakPct float64) {
+func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[10]float64, barW int32, x int32, winH int32, extended bool, peakPct float64) {
 	// Clear this slot so we never leave previous (e.g. mem/net) content visible
 	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
 	renderer.FillRect(&sdl.Rect{X: x, Y: 0, W: barW, H: winH})
@@ -525,8 +526,9 @@ func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[9]float64, barW int32, x int
 	}
 	fill(constants.Blue.R, constants.Blue.G, constants.Blue.B, (*s)[0])       // system
 	fill(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, (*s)[1]) // user
-	fill(constants.Green.R, constants.Green.G, constants.Green.B, (*s)[2])    // nice
-	fill(constants.Black.R, constants.Black.G, constants.Black.B, (*s)[3])    // idle
+	fill(constants.Green.R, constants.Green.G, constants.Green.B, (*s)[2])        // nice
+	fill(constants.LimeGreen.R, constants.LimeGreen.G, constants.LimeGreen.B, (*s)[9]) // guestnice
+	fill(constants.Black.R, constants.Black.G, constants.Black.B, (*s)[3])     // idle
 	fill(constants.Purple.R, constants.Purple.G, constants.Purple.B, (*s)[4]) // iowait
 	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[5])    // irq
 	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[6])    // softirq

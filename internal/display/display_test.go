@@ -1317,7 +1317,7 @@ func TestSeparator_TwoHosts_Enabled(t *testing.T) {
 	drawFrame(renderer, src, cfg, state)
 
 	// 2 bars at 200px → each 100px. Separator at x=100 (start of second host's bars)
-	assertPixelColor(t, surface, 100, 50, constants.Yellow, 3, "separator yellow at x=100")
+	assertPixelColor(t, surface, 100, 50, constants.Red, 3, "separator red at x=100")
 }
 
 func TestSeparator_TwoHosts_Disabled(t *testing.T) {
@@ -1353,7 +1353,7 @@ func TestSeparator_TwoHosts_Disabled(t *testing.T) {
 
 	drawFrame(renderer, src, cfg, state)
 
-	// At x=100, should be blue (second host's system bar), NOT yellow separator
+	// At x=100, should be blue (second host's system bar), NOT red separator
 	assertPixelColor(t, surface, 100, 50, constants.Blue, 3, "no separator, should be blue")
 }
 
@@ -1386,14 +1386,14 @@ func TestSeparator_SingleHost(t *testing.T) {
 
 	drawFrame(renderer, src, cfg, state)
 
-	// No separator at the edges — just verify no yellow at x=0 or x=99
+	// No separator at the edges — just verify no red separator at x=0 or x=99
 	r, g, b := getPixelColor(surface, 0, 50)
-	if r == constants.Yellow.R && g == constants.Yellow.G && b == constants.Yellow.B {
-		t.Errorf("unexpected yellow separator at x=0 with single host")
+	if r == constants.Red.R && g == constants.Red.G && b == constants.Red.B {
+		t.Errorf("unexpected red separator at x=0 with single host")
 	}
 	r, g, b = getPixelColor(surface, 99, 50)
-	if r == constants.Yellow.R && g == constants.Yellow.G && b == constants.Yellow.B {
-		t.Errorf("unexpected yellow separator at x=99 with single host")
+	if r == constants.Red.R && g == constants.Red.G && b == constants.Red.B {
+		t.Errorf("unexpected red separator at x=99 with single host")
 	}
 }
 

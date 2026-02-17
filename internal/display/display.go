@@ -324,9 +324,9 @@ func drawBars(renderer *sdl.Renderer, snap map[string]*stats.HostStats, cfg *con
 			separators = append(separators, sepRect{sx, sy, sh})
 		}
 	}
-	// Draw 1px yellow vertical separators on top of all bars
+	// Draw 1px red vertical separators on top of all bars (same color as CPU steal)
 	for _, sep := range separators {
-		renderer.SetDrawColor(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, 255)
+		renderer.SetDrawColor(constants.Red.R, constants.Red.G, constants.Red.B, 255)
 		renderer.FillRect(&sdl.Rect{X: sep.x, Y: sep.y, W: 1, H: sep.h})
 	}
 }

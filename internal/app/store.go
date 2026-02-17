@@ -21,6 +21,10 @@ type hostData struct {
 	cpu                  map[string]collector.CPULine
 }
 
+// Compile-time interface satisfaction checks.
+var _ stats.Source = (*Store)(nil)
+var _ collector.StatsStore = (*Store)(nil)
+
 // NewStore creates an empty store.
 func NewStore() *Store {
 	return &Store{hosts: make(map[string]*hostData)}
@@ -98,6 +102,3 @@ func (s *Store) getOrCreate(host string) *hostData {
 	}
 	return s.hosts[host]
 }
-
-var _ stats.Source = (*Store)(nil)
-var _ collector.StatsStore = (*Store)(nil)

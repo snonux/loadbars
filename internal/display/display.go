@@ -19,43 +19,47 @@ import (
 
 const smoothFactor = 0.12 // blend toward target each frame; lower = smoother
 
+// linkScales lists the supported network link speeds in ascending order,
+// used by the f/v hotkeys to cycle through link scale values.
+var linkScales = []string{"mbit", "10mbit", "100mbit", "gbit", "10gbit"}
+
 // runState holds mutable state across the display loop (hotkeys, window size, smoothed data).
 type runState struct {
-	showAvgLine   bool
-	showIOAvgLine bool
-	showCores     bool
-	showMem     bool
+	showAvgLine    bool
+	showIOAvgLine  bool
+	showCores      bool
+	showMem        bool
 	showNet        bool
 	showSeparators bool
 	extended       bool
-	winW        int32
-	winH        int32
-	prevCPU     map[string]collector.CPULine
-	smoothedCPU map[string]*[10]float64
-	smoothedMem map[string]*struct{ ramUsed, swapUsed float64 }
-	smoothedNet map[string]*struct{ rxPct, txPct float64 }
-	prevNet     map[string]stats.NetStamp // aggregated (summed) previous net stamp per host
-	peakHistory map[string][]float64
+	winW           int32
+	winH           int32
+	prevCPU        map[string]collector.CPULine
+	smoothedCPU    map[string]*[10]float64
+	smoothedMem    map[string]*struct{ ramUsed, swapUsed float64 }
+	smoothedNet    map[string]*struct{ rxPct, txPct float64 }
+	prevNet        map[string]stats.NetStamp // aggregated (summed) previous net stamp per host
+	peakHistory    map[string][]float64
 }
 
 // newRunState builds initial run state from config.
 func newRunState(cfg *config.Config, winW, winH int32) *runState {
 	return &runState{
-		showAvgLine:   cfg.ShowAvgLine,
-		showIOAvgLine: cfg.ShowIOAvgLine,
-		showCores:     cfg.ShowCores,
-		showMem:     cfg.ShowMem,
+		showAvgLine:    cfg.ShowAvgLine,
+		showIOAvgLine:  cfg.ShowIOAvgLine,
+		showCores:      cfg.ShowCores,
+		showMem:        cfg.ShowMem,
 		showNet:        cfg.ShowNet,
 		showSeparators: cfg.ShowSeparators,
 		extended:       cfg.Extended,
-		winW:        winW,
-		winH:        winH,
-		prevCPU:     make(map[string]collector.CPULine),
-		smoothedCPU: make(map[string]*[10]float64),
-		smoothedMem: make(map[string]*struct{ ramUsed, swapUsed float64 }),
-		smoothedNet: make(map[string]*struct{ rxPct, txPct float64 }),
-		prevNet:     make(map[string]stats.NetStamp),
-		peakHistory: make(map[string][]float64),
+		winW:           winW,
+		winH:           winH,
+		prevCPU:        make(map[string]collector.CPULine),
+		smoothedCPU:    make(map[string]*[10]float64),
+		smoothedMem:    make(map[string]*struct{ ramUsed, swapUsed float64 }),
+		smoothedNet:    make(map[string]*struct{ rxPct, txPct float64 }),
+		prevNet:        make(map[string]stats.NetStamp),
+		peakHistory:    make(map[string][]float64),
 	}
 }
 
@@ -632,13 +636,6 @@ func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *st
 func printHotkeys() {
 	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
 }
-
-
-// netLinkBytesPerSec returns link speed in bytes/sec from cfg.NetLink (e.g. "gbit", "10gbit", "100mbit", or numeric mbit).
-
-// linkScales lists the supported network link speeds in ascending order,
-// used by the f/v hotkeys to cycle through link scale values.
-var linkScales = []string{"mbit", "10mbit", "100mbit", "gbit", "10gbit"}
 
 // scaleLinkUp moves cfg.NetLink to the next higher link speed in linkScales.
 // Clamps at the maximum (10gbit).

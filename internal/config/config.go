@@ -24,14 +24,14 @@ type Config struct {
 	MaxWidth   int
 	NetAverage int
 	NetLink    string
-	ShowAvgLine   bool
-	ShowIOAvgLine bool
-	ShowCores     bool
-	ShowMem     bool
+	ShowAvgLine    bool
+	ShowIOAvgLine  bool
+	ShowCores      bool
+	ShowMem        bool
 	ShowNet        bool
 	ShowSeparators bool
 	SSHOpts        string
-	Cluster    string
+	Cluster        string
 }
 
 // Default returns a Config with default values.
@@ -182,11 +182,6 @@ func (c *Config) set(key, val string) {
 	}
 }
 
-func parseBool(s string) bool {
-	s = strings.TrimSpace(strings.ToLower(s))
-	return s == "1" || s == "true" || s == "yes"
-}
-
 func (c *Config) writeTo(f *os.File) error {
 	w := bufio.NewWriter(f)
 	writeInt := func(key string, v int) { fmt.Fprintf(w, "%s=%d\n", key, v) }
@@ -215,6 +210,11 @@ func (c *Config) writeTo(f *os.File) error {
 	writeStr("sshopts", c.SSHOpts)
 	writeStr("cluster", c.Cluster)
 	return w.Flush()
+}
+
+func parseBool(s string) bool {
+	s = strings.TrimSpace(strings.ToLower(s))
+	return s == "1" || s == "true" || s == "yes"
 }
 
 func getClusterHostsRec(cluster, path string, depth int, seen map[string]bool) ([]string, error) {

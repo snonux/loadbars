@@ -241,6 +241,31 @@ func barBounds(winW int32, numBars int, barIndex int) (x int32, width int32) {
 	return startX, endX - startX
 }
 
+// barRect computes the x, y, width, and height for a bar in a multi-row layout.
+// When maxPerRow <= 0 or maxPerRow >= numBars, all bars fit in a single row (full height).
+// Otherwise, bars wrap into multiple rows of equal height. The last row may have
+// fewer bars, which become wider to fill the full window width.
+func barRect(winW, winH int32, numBars, maxPerRow, barIndex int) (x, y, w, h int32) {
+	if maxPerRow <= 0 || maxPerRow >= numBars {
+		// Single row: full window height
+		bx, bw := barBounds(winW, numBars, barIndex)
+		return bx, 0, bw, winH
+	}
+	numRows := (numBars + maxPerRow - 1) / maxPerRow // ceil(numBars / maxPerRow)
+	row := barIndex / maxPerRow
+	col := barIndex % maxPerRow
+	// Count how many bars are in this row (last row may have fewer)
+	barsInRow := maxPerRow
+	if row == numRows-1 {
+		barsInRow = numBars - row*maxPerRow
+	}
+	// Divide window height evenly across rows
+	rowY := (winH * int32(row)) / int32(numRows)
+	rowH := (winH*int32(row+1))/int32(numRows) - rowY
+	bx, bw := barBounds(winW, barsInRow, col)
+	return bx, rowY, bw, rowH
+}
+
 // drawFrame updates state from snapshot, clears if layout changed, and draws all bars.
 // When showAvgLine/showIOAvgLine are enabled, global average lines are drawn on top.
 func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, state *runState) {
@@ -252,10 +277,10 @@ func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, sta
 	renderer.Clear()
 	drawBars(renderer, snap, cfg, state, numBars)
 	if state.showAvgLine {
-		drawGlobalAvgLine(renderer, snap, state)
+		drawGlobalAvgLine(renderer, snap, state, numBars, cfg.MaxBarsPerRow)
 	}
 	if state.showIOAvgLine {
-		drawGlobalIOAvgLine(renderer, snap, state)
+		drawGlobalIOAvgLine(renderer, snap, state, numBars, cfg.MaxBarsPerRow)
 	}
 }
 
@@ -279,34 +304,38 @@ func countBars(snap map[string]*stats.HostStats, showCores, showMem, showNet boo
 }
 
 // drawBars draws CPU, memory, and network bars for all hosts in snap.
+// Bars wrap into multiple rows when cfg.MaxBarsPerRow is set.
 func drawBars(renderer *sdl.Renderer, snap map[string]*stats.HostStats, cfg *config.Config, state *runState, numBars int) {
 	barIndex := 0
 	hosts := sortedHosts(snap)
-	// Track where each host's bars end so we can draw separators after all bars
-	var separatorXs []int32
+	maxPerRow := cfg.MaxBarsPerRow
+	// Track separator rects (position + row height) for drawing after all bars
+	type sepRect struct{ x, y, h int32 }
+	var separators []sepRect
 	for i, host := range hosts {
 		h := snap[host]
 		if h == nil {
 			continue
 		}
-		drawHostBars(renderer, h, host, cfg, state, numBars, &barIndex)
+		drawHostBars(renderer, h, host, cfg, state, numBars, maxPerRow, &barIndex)
 		// Record separator position between hosts (not after the last one)
 		if state.showSeparators && i < len(hosts)-1 {
-			sepX, _ := barBounds(state.winW, numBars, barIndex)
-			separatorXs = append(separatorXs, sepX)
+			sx, sy, _, sh := barRect(state.winW, state.winH, numBars, maxPerRow, barIndex)
+			separators = append(separators, sepRect{sx, sy, sh})
 		}
 	}
 	// Draw 1px yellow vertical separators on top of all bars
-	for _, sepX := range separatorXs {
+	for _, sep := range separators {
 		renderer.SetDrawColor(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, 255)
-		renderer.FillRect(&sdl.Rect{X: sepX, Y: 0, W: 1, H: state.winH})
+		renderer.FillRect(&sdl.Rect{X: sep.x, Y: sep.y, W: 1, H: sep.h})
 	}
 }
 
-// drawGlobalAvgLine draws a 1px red horizontal line spanning the full window width
-// at the Y position corresponding to the mean CPU usage across all hosts.
-// CPU usage per host is the sum of all smoothed segments except idle (index 3).
-func drawGlobalAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStats, state *runState) {
+// drawGlobalAvgLine draws a 1px red horizontal line at the Y position
+// corresponding to the mean CPU usage across all hosts. When bars are
+// split into multiple rows, one line is drawn per row at the correct
+// proportional position within that row.
+func drawGlobalAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStats, state *runState, numBars, maxPerRow int) {
 	var totalUsage float64
 	var hostCount int
 	for _, host := range sortedHosts(snap) {
@@ -333,21 +362,31 @@ func drawGlobalAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStats,
 		return
 	}
 	avgPct := totalUsage / float64(hostCount)
-	lineY := state.winH - int32(avgPct*float64(state.winH)/100)
-	if lineY < 0 {
-		lineY = 0
-	}
-	if lineY >= state.winH {
-		lineY = state.winH - 1
-	}
 	renderer.SetDrawColor(constants.Red.R, constants.Red.G, constants.Red.B, 255)
-	renderer.FillRect(&sdl.Rect{X: 0, Y: lineY, W: state.winW, H: 1})
+	// Draw one line per row, positioned proportionally within each row's height
+	numRows := 1
+	if maxPerRow > 0 && maxPerRow < numBars {
+		numRows = (numBars + maxPerRow - 1) / maxPerRow
+	}
+	for row := 0; row < numRows; row++ {
+		rowY := (state.winH * int32(row)) / int32(numRows)
+		rowH := (state.winH*int32(row+1))/int32(numRows) - rowY
+		lineY := rowY + rowH - int32(avgPct*float64(rowH)/100)
+		if lineY < rowY {
+			lineY = rowY
+		}
+		if lineY >= rowY+rowH {
+			lineY = rowY + rowH - 1
+		}
+		renderer.FillRect(&sdl.Rect{X: 0, Y: lineY, W: state.winW, H: 1})
+	}
 }
 
 // drawGlobalIOAvgLine draws a 1px pink horizontal line from the top of the window
 // at the Y position corresponding to the mean I/O overhead (iowait + IRQ + softIRQ,
-// indices 4, 5, 6 in the smoothed CPU array) across all hosts.
-func drawGlobalIOAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStats, state *runState) {
+// indices 4, 5, 6 in the smoothed CPU array) across all hosts. When bars are split
+// into multiple rows, one line is drawn per row.
+func drawGlobalIOAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStats, state *runState, numBars, maxPerRow int) {
 	var totalIO float64
 	var hostCount int
 	for _, host := range sortedHosts(snap) {
@@ -368,21 +407,29 @@ func drawGlobalIOAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStat
 		return
 	}
 	avgPct := totalIO / float64(hostCount)
-	// Draw from top: lineY = percentage of window height from the top
-	lineY := int32(avgPct * float64(state.winH) / 100)
-	if lineY < 0 {
-		lineY = 0
-	}
-	if lineY >= state.winH {
-		lineY = state.winH - 1
-	}
 	renderer.SetDrawColor(constants.Pink.R, constants.Pink.G, constants.Pink.B, 255)
-	renderer.FillRect(&sdl.Rect{X: 0, Y: lineY, W: state.winW, H: 1})
+	// Draw one line per row, positioned proportionally from the top of each row
+	numRows := 1
+	if maxPerRow > 0 && maxPerRow < numBars {
+		numRows = (numBars + maxPerRow - 1) / maxPerRow
+	}
+	for row := 0; row < numRows; row++ {
+		rowY := (state.winH * int32(row)) / int32(numRows)
+		rowH := (state.winH*int32(row+1))/int32(numRows) - rowY
+		lineY := rowY + int32(avgPct*float64(rowH)/100)
+		if lineY < rowY {
+			lineY = rowY
+		}
+		if lineY >= rowY+rowH {
+			lineY = rowY + rowH - 1
+		}
+		renderer.FillRect(&sdl.Rect{X: 0, Y: lineY, W: state.winW, H: 1})
+	}
 }
 
 // drawHostBars draws CPU, mem, and net bars for one host and advances barIndex.
-func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *config.Config, state *runState, numBars int, barIndex *int) {
-	winH := state.winH
+// maxPerRow controls multi-row wrapping (0 = single row).
+func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *config.Config, state *runState, numBars, maxPerRow int, barIndex *int) {
 	cpuNames := sortedCPUNames(h.CPU, state.showCores)
 	for _, name := range cpuNames {
 		key := host + ";" + name
@@ -404,25 +451,25 @@ func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *
 			normalizePcts(s)
 		}
 		peakPct := peakPctForBar(state, key, cfg.CPUAverage, s)
-		x, barW := barBounds(state.winW, numBars, *barIndex)
+		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
 		*barIndex++
-		drawCPUBarFromPcts(renderer, s, barW, x, winH, state.extended, peakPct)
+		drawCPUBarFromPcts(renderer, s, barW, x, y, barH, state.extended, peakPct)
 	}
 	if state.showMem {
 		if state.smoothedMem[host] == nil {
 			state.smoothedMem[host] = &struct{ ramUsed, swapUsed float64 }{}
 		}
-		x, barW := barBounds(state.winW, numBars, *barIndex)
+		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
 		*barIndex++
-		drawMemBarSmoothed(renderer, h, state.smoothedMem[host], smoothFactor, barW, x, winH)
+		drawMemBarSmoothed(renderer, h, state.smoothedMem[host], smoothFactor, barW, x, y, barH)
 	}
 	if state.showNet {
 		if state.smoothedNet[host] == nil {
 			state.smoothedNet[host] = &struct{ rxPct, txPct float64 }{}
 		}
-		x, barW := barBounds(state.winW, numBars, *barIndex)
+		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
 		*barIndex++
-		state.prevNet[host] = drawNetBarSmoothed(renderer, h, cfg, state.smoothedNet[host], state.prevNet[host], smoothFactor, barW, x, winH)
+		state.prevNet[host] = drawNetBarSmoothed(renderer, h, cfg, state.smoothedNet[host], state.prevNet[host], smoothFactor, barW, x, y, barH)
 	}
 }
 
@@ -527,44 +574,46 @@ func normalizePcts(s *[10]float64) {
 	}
 }
 
-// drawCPUBarFromPcts draws one CPU bar from 10 smoothed segment percentages. If s is nil, advances x only.
-// When extended is true and peakPct > 0, draws a 1px peak line (max system+user over history).
-func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[10]float64, barW int32, x int32, winH int32, extended bool, peakPct float64) {
+// drawCPUBarFromPcts draws one CPU bar from 10 smoothed segment percentages.
+// The bar occupies the region (x, y) with dimensions (barW, barH).
+// If s is nil, only clears the slot. When extended is true and peakPct > 0,
+// draws a 1px peak line (max system+user over history).
+func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[10]float64, barW int32, x, y, barH int32, extended bool, peakPct float64) {
 	// Clear this slot so we never leave previous (e.g. mem/net) content visible
 	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-	renderer.FillRect(&sdl.Rect{X: x, Y: 0, W: barW, H: winH})
+	renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: barH})
 	if s == nil {
 		return
 	}
-	barH := float64(winH) / 100.0
-	y := float64(winH)
+	pxPerPct := float64(barH) / 100.0
+	curY := float64(y + barH)
 	fill := func(r, g, b uint8, pct float64) {
-		hh := int32(pct * barH)
+		hh := int32(pct * pxPerPct)
 		if hh < 1 && pct > 0 {
 			hh = 1
 		}
-		y -= float64(hh)
+		curY -= float64(hh)
 		renderer.SetDrawColor(r, g, b, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: int32(y), W: barW, H: hh})
+		renderer.FillRect(&sdl.Rect{X: x, Y: int32(curY), W: barW, H: hh})
 	}
-	fill(constants.Blue.R, constants.Blue.G, constants.Blue.B, (*s)[0])       // system
-	fill(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, (*s)[1]) // user
-	fill(constants.Green.R, constants.Green.G, constants.Green.B, (*s)[2])        // nice
+	fill(constants.Blue.R, constants.Blue.G, constants.Blue.B, (*s)[0])             // system
+	fill(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, (*s)[1])       // user
+	fill(constants.Green.R, constants.Green.G, constants.Green.B, (*s)[2])          // nice
 	fill(constants.LimeGreen.R, constants.LimeGreen.G, constants.LimeGreen.B, (*s)[9]) // guestnice
-	fill(constants.Black.R, constants.Black.G, constants.Black.B, (*s)[3])     // idle
-	fill(constants.Purple.R, constants.Purple.G, constants.Purple.B, (*s)[4]) // iowait
-	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[5])    // irq
-	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[6])    // softirq
-	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[7])          // guest
-	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[8])          // steal
+	fill(constants.Black.R, constants.Black.G, constants.Black.B, (*s)[3])          // idle
+	fill(constants.Purple.R, constants.Purple.G, constants.Purple.B, (*s)[4])       // iowait
+	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[5])          // irq
+	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[6])          // softirq
+	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[7])                // guest
+	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[8])                // steal
 	// Extended: 1px peak line at max (system+user) over history
 	if extended && peakPct > 0 {
-		peakY := winH - int32(peakPct*barH)
-		if peakY < 0 {
-			peakY = 0
+		peakY := y + barH - int32(peakPct*pxPerPct)
+		if peakY < y {
+			peakY = y
 		}
-		if peakY >= winH {
-			peakY = winH - 1
+		if peakY >= y+barH {
+			peakY = y + barH - 1
 		}
 		if peakPct > float64(constants.UserOrangeThreshold) {
 			renderer.SetDrawColor(constants.Orange.R, constants.Orange.G, constants.Orange.B, 255)
@@ -578,10 +627,11 @@ func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[10]float64, barW int32, x in
 }
 
 // drawMemBarSmoothed blends mem stats toward target and draws one memory bar (RAM left, Swap right).
-func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *struct{ ramUsed, swapUsed float64 }, factor float64, barW int32, x int32, winH int32) {
+// The bar occupies the region (x, y) with dimensions (barW, barH).
+func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *struct{ ramUsed, swapUsed float64 }, factor float64, barW int32, x, y, barH int32) {
 	// Clear this slot so we never leave previous (e.g. CPU/net) content visible
 	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-	renderer.FillRect(&sdl.Rect{X: x, Y: 0, W: barW, H: winH})
+	renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: barH})
 	if h.Mem == nil {
 		return
 	}
@@ -608,28 +658,28 @@ func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *st
 	smoothed.swapUsed += (targetSwap - smoothed.swapUsed) * factor
 
 	halfW := barW / 2
-	barH := float64(winH) / 100.0
+	pxPerPct := float64(barH) / 100.0
 
 	// RAM: used (dark grey) from bottom, free (black) on top
-	ramUsedH := int32(smoothed.ramUsed * barH)
+	ramUsedH := int32(smoothed.ramUsed * pxPerPct)
 	if ramUsedH > 0 {
 		renderer.SetDrawColor(constants.DarkGrey.R, constants.DarkGrey.G, constants.DarkGrey.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: winH - ramUsedH, W: halfW, H: ramUsedH})
+		renderer.FillRect(&sdl.Rect{X: x, Y: y + barH - ramUsedH, W: halfW, H: ramUsedH})
 	}
-	if ramFreeH := winH - ramUsedH; ramFreeH > 0 {
+	if ramFreeH := barH - ramUsedH; ramFreeH > 0 {
 		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: 0, W: halfW, H: ramFreeH})
+		renderer.FillRect(&sdl.Rect{X: x, Y: y, W: halfW, H: ramFreeH})
 	}
 
 	// Swap: used (grey) from bottom, free (black) on top
-	swapUsedH := int32(smoothed.swapUsed * barH)
+	swapUsedH := int32(smoothed.swapUsed * pxPerPct)
 	if swapUsedH > 0 {
 		renderer.SetDrawColor(constants.Grey.R, constants.Grey.G, constants.Grey.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: winH - swapUsedH, W: halfW, H: swapUsedH})
+		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: y + barH - swapUsedH, W: halfW, H: swapUsedH})
 	}
-	if swapFreeH := winH - swapUsedH; swapFreeH > 0 {
+	if swapFreeH := barH - swapUsedH; swapFreeH > 0 {
 		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: 0, W: halfW, H: swapFreeH})
+		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: y, W: halfW, H: swapFreeH})
 	}
 }
 
@@ -713,18 +763,19 @@ func sumNonLoNet(h *stats.HostStats) (sum stats.NetStamp, hasIface bool) {
 
 // drawNetBarSmoothed sums RX/TX across all non-lo interfaces, computes utilization
 // vs link speed, smooths toward target, and draws one net bar (RX left from top, TX right from bottom).
+// The bar occupies the region (x, y) with dimensions (barW, barH).
 // Smoothed values and prevNet are only updated when new collector data arrives
 // (cur.Stamp > prev.Stamp), so the bar holds steady between collector cycles
 // instead of decaying toward zero on frames with no new data.
-func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.Config, smoothed *struct{ rxPct, txPct float64 }, prev stats.NetStamp, factor float64, barW int32, x int32, winH int32) stats.NetStamp {
+func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.Config, smoothed *struct{ rxPct, txPct float64 }, prev stats.NetStamp, factor float64, barW int32, x, y, barH int32) stats.NetStamp {
 	// Clear this slot so we never leave previous (e.g. CPU/mem) content visible
 	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-	renderer.FillRect(&sdl.Rect{X: x, Y: 0, W: barW, H: winH})
+	renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: barH})
 	cur, hasIface := sumNonLoNet(h)
 	if !hasIface {
 		// No non-lo interface: show red bar
 		renderer.SetDrawColor(constants.Red.R, constants.Red.G, constants.Red.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: 0, W: barW, H: winH})
+		renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: barH})
 		return prev
 	}
 	// Only recompute and smooth when the collector has provided new data.
@@ -759,32 +810,33 @@ func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.
 	}
 
 	halfW := barW / 2
-	barH := float64(winH) / 100.0
+	pxPerPct := float64(barH) / 100.0
+	halfH := barH / 2
 	// Left half: RX from top (light green = used)
-	rxH := int32(smoothed.rxPct * barH)
-	if rxH > winH/2 {
-		rxH = winH / 2
+	rxH := int32(smoothed.rxPct * pxPerPct)
+	if rxH > halfH {
+		rxH = halfH
 	}
 	if rxH > 0 {
 		renderer.SetDrawColor(constants.LightGreen.R, constants.LightGreen.G, constants.LightGreen.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: 0, W: halfW, H: rxH})
+		renderer.FillRect(&sdl.Rect{X: x, Y: y, W: halfW, H: rxH})
 	}
-	if halfW > 0 && winH/2-rxH > 0 {
+	if halfW > 0 && halfH-rxH > 0 {
 		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: rxH, W: halfW, H: winH/2 - rxH})
+		renderer.FillRect(&sdl.Rect{X: x, Y: y + rxH, W: halfW, H: halfH - rxH})
 	}
 	// Right half: TX from bottom (light green = used)
-	txH := int32(smoothed.txPct * barH)
-	if txH > winH/2 {
-		txH = winH / 2
+	txH := int32(smoothed.txPct * pxPerPct)
+	if txH > halfH {
+		txH = halfH
 	}
 	if txH > 0 {
 		renderer.SetDrawColor(constants.LightGreen.R, constants.LightGreen.G, constants.LightGreen.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: winH - txH, W: halfW, H: txH})
+		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: y + barH - txH, W: halfW, H: txH})
 	}
-	if halfW > 0 && (winH-txH) > 0 {
+	if halfW > 0 && (barH-txH) > 0 {
 		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: 0, W: halfW, H: winH - txH})
+		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: y, W: halfW, H: barH - txH})
 	}
 	return prev
 }

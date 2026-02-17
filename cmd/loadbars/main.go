@@ -34,6 +34,7 @@ func main() {
 	flag.StringVar(&cfg.Title, "title", cfg.Title, "Set title bar text")
 	flag.StringVar(&cfg.SSHOpts, "sshopts", cfg.SSHOpts, "Set SSH options")
 	flag.BoolVar(&cfg.HasAgent, "hasagent", cfg.HasAgent, "SSH key already known by agent")
+	flag.IntVar(&cfg.MaxBarsPerRow, "maxbarsperrow", cfg.MaxBarsPerRow, "Max bars per row (0=unlimited)")
 
 	flag.Parse()
 

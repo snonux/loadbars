@@ -30,6 +30,7 @@ type Config struct {
 	ShowMem        bool
 	ShowNet        bool
 	ShowSeparators bool
+	MaxBarsPerRow  int
 	SSHOpts        string
 	Cluster        string
 }
@@ -45,9 +46,10 @@ func Default() Config {
 		MaxWidth:   1900,
 		NetAverage: 15,
 		NetLink:    "gbit",
-		ShowCores:  false,
-		ShowMem:    false,
-		ShowNet:    false,
+		ShowCores:     false,
+		ShowMem:       false,
+		ShowNet:       false,
+		MaxBarsPerRow: 0,
 	}
 }
 
@@ -108,7 +110,7 @@ func (c *Config) parseReader(f *os.File) error {
 		"hasagent": true, "height": true, "maxwidth": true, "netaverage": true,
 		"netlink": true, "showcores": true, "showmem": true,
 		"showavgline": true, "showioavgline": true, "shownet": true, "showseparators": true,
-		"sshopts": true, "cluster": true,
+		"maxbarsperrow": true, "sshopts": true, "cluster": true,
 	}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -175,6 +177,10 @@ func (c *Config) set(key, val string) {
 		c.ShowNet = parseBool(val)
 	case "showseparators":
 		c.ShowSeparators = parseBool(val)
+	case "maxbarsperrow":
+		if n, err := strconv.Atoi(val); err == nil {
+			c.MaxBarsPerRow = n
+		}
 	case "sshopts":
 		c.SSHOpts = val
 	case "cluster":
@@ -207,6 +213,7 @@ func (c *Config) writeTo(f *os.File) error {
 	writeBool("showmem", c.ShowMem)
 	writeBool("shownet", c.ShowNet)
 	writeBool("showseparators", c.ShowSeparators)
+	writeInt("maxbarsperrow", c.MaxBarsPerRow)
 	writeStr("sshopts", c.SSHOpts)
 	writeStr("cluster", c.Cluster)
 	return w.Flush()

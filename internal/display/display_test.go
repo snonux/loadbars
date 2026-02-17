@@ -1397,6 +1397,177 @@ func TestSeparator_SingleHost(t *testing.T) {
 	}
 }
 
+// --- barRect tests ---
+
+func TestBarRect_Unlimited(t *testing.T) {
+	// maxPerRow=0 means unlimited → single row, same as barBounds with y=0, h=winH
+	const winW, winH int32 = 600, 200
+	numBars := 6
+	for i := 0; i < numBars; i++ {
+		x, y, w, h := barRect(winW, winH, numBars, 0, i)
+		bx, bw := barBounds(winW, numBars, i)
+		if x != bx || w != bw {
+			t.Errorf("bar %d: barRect x/w = (%d,%d), barBounds = (%d,%d)", i, x, w, bx, bw)
+		}
+		if y != 0 || h != winH {
+			t.Errorf("bar %d: expected y=0, h=%d; got y=%d, h=%d", i, winH, y, h)
+		}
+	}
+}
+
+func TestBarRect_MultiRow(t *testing.T) {
+	// 6 bars, maxPerRow=4 → 2 rows: row 0 has 4 bars, row 1 has 2 bars
+	const winW, winH int32 = 400, 200
+	numBars, maxPerRow := 6, 4
+
+	// Row 0: bars 0-3, each 100px wide, y=0, h=100
+	for i := 0; i < 4; i++ {
+		x, y, w, h := barRect(winW, winH, numBars, maxPerRow, i)
+		if y != 0 || h != 100 {
+			t.Errorf("bar %d: expected y=0 h=100, got y=%d h=%d", i, y, h)
+		}
+		expectedX := int32(i) * 100
+		if x != expectedX || w != 100 {
+			t.Errorf("bar %d: expected x=%d w=100, got x=%d w=%d", i, expectedX, x, w)
+		}
+	}
+
+	// Row 1: bars 4-5, each 200px wide (2 bars fill 400px), y=100, h=100
+	for i := 4; i < 6; i++ {
+		x, y, w, h := barRect(winW, winH, numBars, maxPerRow, i)
+		if y != 100 || h != 100 {
+			t.Errorf("bar %d: expected y=100 h=100, got y=%d h=%d", i, y, h)
+		}
+		col := i - 4
+		expectedX := int32(col) * 200
+		if x != expectedX || w != 200 {
+			t.Errorf("bar %d: expected x=%d w=200, got x=%d w=%d", i, expectedX, x, w)
+		}
+	}
+}
+
+func TestBarRect_LastRowWider(t *testing.T) {
+	// 5 bars, maxPerRow=3 → 2 rows: row 0 has 3 bars (133px), row 1 has 2 bars (200px)
+	const winW, winH int32 = 400, 100
+	numBars, maxPerRow := 5, 3
+
+	// Last row bars should be wider since fewer bars fill the full width
+	_, _, w0, _ := barRect(winW, winH, numBars, maxPerRow, 0)
+	_, _, w3, _ := barRect(winW, winH, numBars, maxPerRow, 3)
+	if w3 <= w0 {
+		t.Errorf("last row bars should be wider: row0 bar w=%d, row1 bar w=%d", w0, w3)
+	}
+}
+
+func TestBarRect_SingleBar(t *testing.T) {
+	// Edge case: 1 bar fills the entire window
+	const winW, winH int32 = 300, 150
+	x, y, w, h := barRect(winW, winH, 1, 0, 0)
+	if x != 0 || y != 0 || w != winW || h != winH {
+		t.Errorf("expected (0,0,%d,%d), got (%d,%d,%d,%d)", winW, winH, x, y, w, h)
+	}
+	// Also with maxPerRow=1
+	x, y, w, h = barRect(winW, winH, 1, 1, 0)
+	if x != 0 || y != 0 || w != winW || h != winH {
+		t.Errorf("maxPerRow=1: expected (0,0,%d,%d), got (%d,%d,%d,%d)", winW, winH, x, y, w, h)
+	}
+}
+
+func TestBarRect_MaxPerRowOne(t *testing.T) {
+	// maxPerRow=1: each bar gets its own row, full width
+	const winW, winH int32 = 200, 300
+	numBars := 3
+	for i := 0; i < numBars; i++ {
+		x, y, w, h := barRect(winW, winH, numBars, 1, i)
+		if x != 0 || w != winW {
+			t.Errorf("bar %d: expected x=0 w=%d, got x=%d w=%d", i, winW, x, w)
+		}
+		expectedY := winH * int32(i) / 3
+		expectedH := winH*int32(i+1)/3 - expectedY
+		if y != expectedY || h != expectedH {
+			t.Errorf("bar %d: expected y=%d h=%d, got y=%d h=%d", i, expectedY, expectedH, y, h)
+		}
+	}
+}
+
+func TestBarRect_NegativeMaxPerRow(t *testing.T) {
+	// Negative maxPerRow treated as unlimited (same as 0)
+	const winW, winH int32 = 400, 100
+	numBars := 4
+	for i := 0; i < numBars; i++ {
+		x, y, w, h := barRect(winW, winH, numBars, -1, i)
+		bx, bw := barBounds(winW, numBars, i)
+		if x != bx || w != bw || y != 0 || h != winH {
+			t.Errorf("bar %d: negative maxPerRow should act as unlimited", i)
+		}
+	}
+}
+
+func TestBarRect_MaxPerRowExceedsNumBars(t *testing.T) {
+	// maxPerRow >= numBars → single row
+	const winW, winH int32 = 400, 100
+	numBars := 3
+	for i := 0; i < numBars; i++ {
+		x, y, w, h := barRect(winW, winH, numBars, 10, i)
+		bx, bw := barBounds(winW, numBars, i)
+		if x != bx || w != bw || y != 0 || h != winH {
+			t.Errorf("bar %d: maxPerRow >= numBars should act as single row", i)
+		}
+	}
+}
+
+func TestMultiRow_DrawFrame(t *testing.T) {
+	// Verify that multi-row layout draws bars in correct positions
+	const w, h int32 = 200, 200
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	// 4 hosts × 1 CPU bar = 4 bars, maxPerRow=2 → 2 rows of 2 bars
+	cfg := defaultTestConfig()
+	cfg.MaxBarsPerRow = 2
+
+	prev1, cur1 := makeCPUPair(100, 0, 0) // all system → blue
+	prev2, cur2 := makeCPUPair(0, 100, 0)  // all user → yellow
+	prev3, cur3 := makeCPUPair(0, 0, 100)  // all idle → black
+	prev4, cur4 := makeCPUPair(100, 0, 0)  // all system → blue
+
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"alpha": {CPU: map[string]collector.CPULine{"cpu": cur1}},
+			"beta":  {CPU: map[string]collector.CPULine{"cpu": cur2}},
+			"gamma": {CPU: map[string]collector.CPULine{"cpu": cur3}},
+			"delta": {CPU: map[string]collector.CPULine{"cpu": cur4}},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.prevCPU["alpha;cpu"] = prev1
+	state.prevCPU["beta;cpu"] = prev2
+	state.prevCPU["gamma;cpu"] = prev3
+	state.prevCPU["delta;cpu"] = prev4
+
+	drawFrame(renderer, src, cfg, state)
+
+	const tol = 5
+	// Row 0 (y=0..99): 2 bars each 100px wide
+	// Bar 0 (alpha, blue) at x=50, y=90
+	assertPixelColor(t, surface, 50, 90, constants.Blue, tol, "row0 bar0 blue")
+	// Bar 1 (beta, yellow) at x=150, y=90
+	assertPixelColor(t, surface, 150, 90, constants.Yellow, tol, "row0 bar1 yellow")
+
+	// Row 1 (y=100..199): 2 bars each 100px wide
+	// Hosts sorted alphabetically: alpha, beta, delta, gamma
+	// Bar 2 (delta, blue) at x=50, y=190
+	assertPixelColor(t, surface, 50, 190, constants.Blue, tol, "row1 bar2 blue")
+	// Bar 3 (gamma, idle/black) at x=150, y=150
+	assertPixelColor(t, surface, 150, 150, constants.Black, tol, "row1 bar3 black")
+}
+
 func TestHandleKey_WriteConfig_Separators(t *testing.T) {
 	// Verify that 'w' hotkey persists showSeparators to config
 	tmpDir := t.TempDir()

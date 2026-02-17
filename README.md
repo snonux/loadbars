@@ -58,6 +58,33 @@ mage test
 For any startup params help check out `--help` on command line or `h` during program
 execution.
 
+### Command-line flags
+
+All options can also be set in `~/.loadbarsrc` (key=value, no leading `--`). CLI flags override the config file.
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--hosts <list>` | Comma-separated list of hosts; optional `user@` in front (e.g. `root@server1,server2`) | (none; default hosts: localhost) |
+| `--cluster <name>` | Cluster name from `/etc/clusters` (ClusterSSH-style); hosts are read from that file | (none) |
+| `--barwidth <n>` | Initial window width in pixels | 1200 |
+| `--height <n>` | Window height in pixels | 150 |
+| `--maxwidth <n>` | Maximum window width in pixels | 1900 |
+| `--cpuaverage <n>` | Number of CPU samples used for average (and extended peak history) | 10 |
+| `--netaverage <n>` | Number of network samples used for average | 15 |
+| `--netlink <speed>` | Link speed for network utilization %: `mbit`, `10mbit`, `100mbit`, `gbit`, `10gbit` or a number | gbit |
+| `--showcores` | Show one bar per CPU core (vs one aggregate bar per host) | off |
+| `--showmem` | Show memory bars (RAM left, Swap right per host) | off |
+| `--shownet` | Show network bars (RX/TX across non-lo interfaces per host) | off |
+| `--extended` | Show extended display (1px peak line on CPU bars) | off |
+| `--title <text>` | Set title bar text | (empty) |
+| `--sshopts <opts>` | Extra SSH options passed to `ssh` (e.g. `-o ConnectTimeout=5`) | (empty) |
+| `--hasagent` | SSH key is already loaded in agent (skip extra agent checks) | off |
+| `--maxbarsperrow <n>` | Max bars per row; 0 = unlimited (single row) | 0 |
+| `--help` | Show usage and exit | — |
+| `--version` | Print version and exit | — |
+
+Hosts can also be given as positional arguments: `loadbars server1 server2 --showcores 1`.
+
 ### A few examples however
 
 ```bash

@@ -29,6 +29,7 @@ type Config struct {
 	CPUMode        int // constants.CPUModeAverage / CPUModeCores / CPUModeOff
 	ShowMem        bool
 	ShowNet        bool
+	ShowLoad       bool
 	ShowSeparators bool
 	MaxBarsPerRow  int
 	SSHOpts        string
@@ -109,7 +110,7 @@ func (c *Config) parseReader(f *os.File) error {
 		"title": true, "barwidth": true, "cpuaverage": true, "extended": true,
 		"hasagent": true, "height": true, "maxwidth": true, "netaverage": true,
 		"netlink": true, "cpumode": true, "showcores": true, "showmem": true,
-		"showavgline": true, "showioavgline": true, "shownet": true, "showseparators": true,
+		"showavgline": true, "showioavgline": true, "shownet": true, "showload": true, "showseparators": true,
 		"maxbarsperrow": true, "sshopts": true, "cluster": true,
 	}
 	scanner := bufio.NewScanner(f)
@@ -185,6 +186,8 @@ func (c *Config) set(key, val string) {
 		c.ShowMem = parseBool(val)
 	case "shownet":
 		c.ShowNet = parseBool(val)
+	case "showload":
+		c.ShowLoad = parseBool(val)
 	case "showseparators":
 		c.ShowSeparators = parseBool(val)
 	case "maxbarsperrow":
@@ -222,6 +225,7 @@ func (c *Config) writeTo(f *os.File) error {
 	writeInt("cpumode", c.CPUMode)
 	writeBool("showmem", c.ShowMem)
 	writeBool("shownet", c.ShowNet)
+	writeBool("showload", c.ShowLoad)
 	writeBool("showseparators", c.ShowSeparators)
 	writeInt("maxbarsperrow", c.MaxBarsPerRow)
 	writeStr("sshopts", c.SSHOpts)

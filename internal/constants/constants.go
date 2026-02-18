@@ -57,6 +57,7 @@ var (
 	DarkGrey   = RGB{0x15, 0x15, 0x15}
 	Yellow0    = RGB{0xff, 0xa0, 0x00}
 	Yellow     = RGB{0xff, 0xc0, 0x00}
+	Teal       = RGB{0x00, 0xcc, 0xcc} // Load average bar fill
 )
 
 // BytesPerSec for link speed reference (bytes per second at given mbit)

@@ -32,6 +32,8 @@ type runState struct {
 	cpuMode        int // constants.CPUModeAverage / CPUModeCores / CPUModeOff
 	showMem        bool
 	showNet        bool
+	showLoad       bool
+	loadPeak       float64 // global max load1 across all hosts (for bar scaling)
 	showSeparators bool
 	extended       bool
 	winW           int32
@@ -103,6 +105,8 @@ func newRunState(cfg *config.Config, winW, winH int32) *runState {
 		cpuMode:        cfg.CPUMode,
 		showMem:        cfg.ShowMem,
 		showNet:        cfg.ShowNet,
+		showLoad:       cfg.ShowLoad,
+		loadPeak:       2.0, // minimum floor ensures meaningful scale on idle systems
 		showSeparators: cfg.ShowSeparators,
 		extended:       cfg.Extended,
 		winW:           winW,
@@ -175,6 +179,9 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 	case sdl.K_3, sdl.K_n:
 		state.showNet = !state.showNet
 		fmt.Println("==> Toggled show net:", state.showNet)
+	case sdl.K_4, sdl.K_l:
+		state.showLoad = !state.showLoad
+		fmt.Println("==> Toggled show load:", state.showLoad)
 	case sdl.K_e:
 		state.extended = !state.extended
 		fmt.Println("==> Toggled extended (peak line):", state.extended)
@@ -215,6 +222,7 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 		cfg.CPUMode = state.cpuMode
 		cfg.ShowMem = state.showMem
 		cfg.ShowNet = state.showNet
+		cfg.ShowLoad = state.showLoad
 		cfg.ShowSeparators = state.showSeparators
 		cfg.Extended = state.extended
 		if err := cfg.Write(); err != nil {
@@ -288,11 +296,15 @@ func barRect(winW, winH int32, numBars, maxPerRow, barIndex int) (x, y, w, h int
 // When showAvgLine/showIOAvgLine are enabled, global average lines are drawn on top.
 func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, state *runState) {
 	snap := src.Snapshot()
-	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet)
+	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet, state.showLoad)
 	// Always clear the entire window before drawing. SDL2 uses double-buffering,
 	// so skipping clear leaves stale content in the back buffer.
 	renderer.SetDrawColor(0, 0, 0, 255)
 	renderer.Clear()
+	if state.showLoad {
+		// Update the global load peak before drawing so bar scale is current.
+		updateLoadPeak(snap, state)
+	}
 	drawBars(renderer, snap, cfg, state, numBars)
 	if state.showAvgLine {
 		drawGlobalAvgLine(renderer, snap, state, numBars, cfg.MaxBarsPerRow)
@@ -304,7 +316,7 @@ func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, sta
 	drawOverlay(renderer, snap, cfg, state)
 }
 
-func countBars(snap map[string]*stats.HostStats, cpuMode int, showMem, showNet bool) int {
+func countBars(snap map[string]*stats.HostStats, cpuMode int, showMem, showNet, showLoad bool) int {
 	n := 0
 	for _, host := range sortedHosts(snap) {
 		if h := snap[host]; h != nil {
@@ -313,6 +325,9 @@ func countBars(snap map[string]*stats.HostStats, cpuMode int, showMem, showNet b
 				n++
 			}
 			if showNet {
+				n++
+			}
+			if showLoad {
 				n++
 			}
 		}
@@ -490,6 +505,11 @@ func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *
 		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
 		*barIndex++
 		state.prevNet[host] = drawNetBarSmoothed(renderer, h, cfg, state.smoothedNet[host], state.prevNet[host], smoothFactor, barW, x, y, barH)
+	}
+	if state.showLoad {
+		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
+		*barIndex++
+		drawLoadAvgBar(renderer, h, state.loadPeak, barW, x, y, barH)
 	}
 }
 
@@ -710,7 +730,7 @@ func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *st
 }
 
 func printHotkeys() {
-	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
+	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net 4/l=load e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
 }
 
 // scaleLinkUp moves cfg.NetLink to the next higher link speed in linkScales.
@@ -865,4 +885,77 @@ func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.
 		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: y, W: halfW, H: barH - txH})
 	}
 	return prev
+}
+
+// updateLoadPeak decays the global load peak and updates it with the current
+// maximum 1-min load across all hosts. The floor of 2.0 prevents a zero scale
+// on idle systems. The slow per-frame decay (× 0.9999) lets the scale recover
+// gradually after a spike rather than snapping back immediately.
+func updateLoadPeak(snap map[string]*stats.HostStats, state *runState) {
+	state.loadPeak *= 0.9999 // slow per-frame decay toward idle baseline
+	if state.loadPeak < 2.0 {
+		state.loadPeak = 2.0
+	}
+	for _, h := range snap {
+		if h == nil {
+			continue
+		}
+		if l1, err := strconv.ParseFloat(strings.TrimSpace(h.LoadAvg1), 64); err == nil {
+			if l1 > state.loadPeak {
+				state.loadPeak = l1
+			}
+		}
+	}
+}
+
+// drawLoadAvgBar renders a load-average bar for one host.
+// The teal fill extends from the top downward proportional to the smoothed 1-min
+// load average relative to the global loadPeak scale.
+// A yellow 1px line marks the 5-min average and a white 1px line marks the
+// 15-min average, giving a visual indication of load trend direction:
+// when load is rising the reference lines appear inside the fill;
+// when load is falling they hang below it.
+func drawLoadAvgBar(renderer *sdl.Renderer, h *stats.HostStats, loadPeak float64, barW int32, x, y, barH int32) {
+	// Clear this slot to black before drawing.
+	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
+	renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: barH})
+
+	// Load averages are already kernel-computed time averages; no further smoothing needed.
+	l1, err1 := strconv.ParseFloat(strings.TrimSpace(h.LoadAvg1), 64)
+	l5, err5 := strconv.ParseFloat(strings.TrimSpace(h.LoadAvg5), 64)
+	l15, err15 := strconv.ParseFloat(strings.TrimSpace(h.LoadAvg15), 64)
+	if err1 != nil || err5 != nil || err15 != nil {
+		return // no valid data yet
+	}
+
+	clamp := func(v, lo, hi float64) float64 {
+		if v < lo {
+			return lo
+		}
+		if v > hi {
+			return hi
+		}
+		return v
+	}
+
+	// Teal fill from top downward for 1-min load.
+	l1H := int32(clamp(l1/loadPeak, 0, 1) * float64(barH))
+	if l1H > 0 {
+		renderer.SetDrawColor(constants.Teal.R, constants.Teal.G, constants.Teal.B, 255)
+		renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: l1H})
+	}
+
+	// Yellow 1px line for 5-min average.
+	l5Y := y + int32(clamp(l5/loadPeak, 0, 1)*float64(barH))
+	if l5Y < y+barH {
+		renderer.SetDrawColor(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, 255)
+		renderer.DrawLine(x, l5Y, x+barW-1, l5Y)
+	}
+
+	// White 1px line for 15-min average.
+	l15Y := y + int32(clamp(l15/loadPeak, 0, 1)*float64(barH))
+	if l15Y < y+barH {
+		renderer.SetDrawColor(constants.White.R, constants.White.G, constants.White.B, 255)
+		renderer.DrawLine(x, l15Y, x+barW-1, l15Y)
+	}
 }

@@ -397,7 +397,7 @@ func TestMultiHost_BarCount(t *testing.T) {
 	}
 
 	snap := src.Snapshot()
-	numBars := countBars(snap, constants.CPUModeAverage, true, true)
+	numBars := countBars(snap, constants.CPUModeAverage, true, true, false)
 	if numBars != 6 {
 		t.Fatalf("expected 6 bars (2 hosts × 3), got %d", numBars)
 	}
@@ -430,19 +430,19 @@ func TestCores_Toggle(t *testing.T) {
 	snap := map[string]*stats.HostStats{"host1": hostStats}
 
 	// CPUModeAverage: aggregate bar only (1 bar)
-	nAverage := countBars(snap, constants.CPUModeAverage, false, false)
+	nAverage := countBars(snap, constants.CPUModeAverage, false, false, false)
 	if nAverage != 1 {
 		t.Errorf("CPUModeAverage: expected 1 bar, got %d", nAverage)
 	}
 
 	// CPUModeCores: aggregate + individual cores = cpu + cpu0 + cpu1 (3 bars)
-	nCores := countBars(snap, constants.CPUModeCores, false, false)
+	nCores := countBars(snap, constants.CPUModeCores, false, false, false)
 	if nCores != 3 {
 		t.Errorf("CPUModeCores: expected 3 bars, got %d", nCores)
 	}
 
 	// CPUModeOff: no CPU bars → countBars floors to 1 (window always shows something)
-	nOff := countBars(snap, constants.CPUModeOff, false, false)
+	nOff := countBars(snap, constants.CPUModeOff, false, false, false)
 	if nOff != 1 {
 		t.Errorf("CPUModeOff: expected 1 (floor), got %d", nOff)
 	}
@@ -700,7 +700,7 @@ func TestHandleKey_ToggleCores(t *testing.T) {
 	}
 
 	// State 2 (CPUModeOff): no CPU bars; countBars returns 1 (floor) so window is still drawn
-	nOff := countBars(src.Snapshot(), constants.CPUModeOff, false, false)
+	nOff := countBars(src.Snapshot(), constants.CPUModeOff, false, false, false)
 	if nOff != 1 {
 		t.Errorf("CPUModeOff: expected countBars=1 (floor), got %d", nOff)
 	}

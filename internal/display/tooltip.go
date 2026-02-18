@@ -2,6 +2,8 @@ package display
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"codeberg.org/snonux/loadbars/internal/config"
@@ -34,6 +36,8 @@ func tooltipLines(bar *barDescriptor, snap map[string]*stats.HostStats, cfg *con
 		return memTooltipLines(bar, h, state)
 	case barNet:
 		return netTooltipLines(bar, cfg, state)
+	case barLoad:
+		return loadTooltipLines(bar, h, state)
 	}
 	return nil
 }
@@ -92,6 +96,26 @@ func netTooltipLines(bar *barDescriptor, cfg *config.Config, state *runState) []
 		fmt.Sprintf("RX: %5.1f%%", sm.rxPct),
 		fmt.Sprintf("TX: %5.1f%%", sm.txPct),
 		fmt.Sprintf("Link: %s", cfg.NetLink),
+	)
+	return lines
+}
+
+// loadTooltipLines returns tooltip text for a load-average bar showing
+// the smoothed 1/5/15-min averages and the current global peak scale.
+func loadTooltipLines(bar *barDescriptor, h *stats.HostStats, state *runState) []string {
+	lines := []string{fmt.Sprintf("%s [load]", bar.host)}
+	l1, err1 := strconv.ParseFloat(strings.TrimSpace(h.LoadAvg1), 64)
+	l5, err5 := strconv.ParseFloat(strings.TrimSpace(h.LoadAvg5), 64)
+	l15, err15 := strconv.ParseFloat(strings.TrimSpace(h.LoadAvg15), 64)
+	if err1 != nil || err5 != nil || err15 != nil {
+		lines = append(lines, "No data yet")
+		return lines
+	}
+	lines = append(lines,
+		fmt.Sprintf("1min:  %.2f", l1),
+		fmt.Sprintf("5min:  %.2f", l5),
+		fmt.Sprintf("15min: %.2f", l15),
+		fmt.Sprintf("Peak:  %.2f", state.loadPeak),
 	)
 	return lines
 }

@@ -13,6 +13,7 @@ const (
 	barCPU barKind = iota
 	barMem
 	barNet
+	barLoad
 )
 
 // barDescriptor describes a single bar's position, host, and type.
@@ -26,7 +27,7 @@ type barDescriptor struct {
 // buildBarMap replays the same host/bar iteration as drawBars to produce
 // a slice of bar descriptors with their screen rectangles.
 func buildBarMap(snap map[string]*stats.HostStats, cfg *config.Config, state *runState) []barDescriptor {
-	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet)
+	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet, state.showLoad)
 	maxPerRow := cfg.MaxBarsPerRow
 	hosts := sortedHosts(snap)
 
@@ -62,6 +63,15 @@ func buildBarMap(snap map[string]*stats.HostStats, cfg *config.Config, state *ru
 			bars = append(bars, barDescriptor{
 				host: host,
 				kind: barNet,
+				rect: sdl.Rect{X: x, Y: y, W: w, H: bh},
+			})
+			barIndex++
+		}
+		if state.showLoad {
+			x, y, w, bh := barRect(state.winW, state.winH, numBars, maxPerRow, barIndex)
+			bars = append(bars, barDescriptor{
+				host: host,
+				kind: barLoad,
 				rect: sdl.Rect{X: x, Y: y, W: w, H: bh},
 			})
 			barIndex++

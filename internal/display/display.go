@@ -231,6 +231,14 @@ func handleToggleKeys(sym sdl.Keycode, cfg *config.Config, state *runState) {
 		} else {
 			fmt.Println("==> Load peak reset ignored (fixed loadmax =", cfg.LoadMax, ")")
 		}
+		// Reset disk auto-scale peak to the floor when disk bars are on and diskmax is not fixed.
+		if state.diskMode != constants.DiskModeOff && cfg.DiskMax == 0 {
+			const diskPeakFloorBps = 1048576.0 // 1 MB/s, same as in updateDiskPeak
+			state.diskPeak = diskPeakFloorBps
+			fmt.Println("==> Disk peak reset to auto-scale floor (1 MB/s)")
+		} else if state.diskMode != constants.DiskModeOff && cfg.DiskMax > 0 {
+			fmt.Println("==> Disk peak reset ignored (fixed diskmax =", cfg.DiskMax, ")")
+		}
 	case sdl.K_e:
 		state.extended = !state.extended
 		fmt.Println("==> Toggled extended (peak line):", state.extended)
@@ -394,6 +402,10 @@ func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, sta
 	drawOverlay(renderer, snap, cfg, state)
 }
 
+// countBars returns the total number of bars to display. The total is computed
+// dynamically per snapshot: each host contributes its own CPU/mem/net/load bars
+// plus its own disk device count (so servers with different numbers of devices
+// are all included).
 func countBars(snap map[string]*stats.HostStats, cpuMode int, showMem, showNet, showLoad bool, diskMode int) int {
 	n := 0
 	for _, host := range sortedHosts(snap) {
@@ -408,6 +420,7 @@ func countBars(snap map[string]*stats.HostStats, cpuMode int, showMem, showNet, 
 			if showLoad {
 				n++
 			}
+			// Per-host device count: aggregate=1 bar, devices=whole-disk count, off=0
 			n += len(sortedDiskNames(h.Disk, diskMode))
 		}
 	}
@@ -826,7 +839,7 @@ func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *st
 }
 
 func printHotkeys() {
-	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net 4/l=load 5=disk r=reset load peak e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg b/x=disk avg f/v=link scale arrows=resize")
+	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net 4/l=load 5=disk r=reset load/disk peak e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg b/x=disk avg f/v=link scale arrows=resize")
 }
 
 // scaleLinkUp moves cfg.NetLink to the next higher link speed in linkScales.

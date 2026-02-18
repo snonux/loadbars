@@ -143,7 +143,7 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 | **3** / **n** | Toggle network bars (RX/TX summed across all non-lo interfaces per host) |
 | **4** / **l** | Toggle load average bars (1-min teal fill, 5-min yellow line, 15-min white line) |
 | **5** | Toggle disk I/O bars: aggregate (all devices) → per-device → off → aggregate |
-| **r** | Reset load auto-scale peak to floor (2.0) — has no effect when `loadmax` is fixed |
+| **r** | Reset load auto-scale peak to floor (2.0) and disk auto-scale peak to floor (1 MB/s) — no effect when `loadmax`/`diskmax` is fixed |
 | **e** | Toggle extended display (1px peak line on CPU bars: max system+user over last samples) |
 | **g** | Toggle global average CPU line (1px red line showing mean CPU usage across all hosts) |
 | **i** | Toggle global I/O average line (1px pink line showing mean iowait+IRQ across all hosts) |

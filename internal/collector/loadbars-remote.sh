@@ -1,5 +1,5 @@
 #!/bin/bash
-# loadbars-remote.sh - Emits loadbars protocol (M LOADAVG, M MEMSTATS, M NETSTATS, M CPUSTATS)
+# loadbars-remote.sh - Emits loadbars protocol (M LOADAVG, M MEMSTATS, M NETSTATS, M DISKSTATS, M CPUSTATS)
 # for local or remote execution. No Perl required.
 # Usage: bash loadbars-remote.sh
 # Interval for CPU sampling (seconds)
@@ -25,6 +25,16 @@ while true; do
       echo "$1:b=${2:-0};tb=${10:-0};p=${3:-0};tp=${11:-0} e=${4:-0};te=${12:-0};d=${5:-0};td=${13:-0}"
     fi
   done < <(tail -n +3 /proc/net/dev 2>/dev/null)
+
+  # Disk: /proc/diskstats, one line per block device with cumulative counters
+  echo "M DISKSTATS"
+  while IFS= read -r line; do
+    set -- $line
+    # $1=major $2=minor $3=device $4=reads_completed $5=reads_merged
+    # $6=sectors_read $7=ms_reading $8=writes_completed $9=writes_merged
+    # $10=sectors_written $11=ms_writing $12=ios_in_progress $13=ms_io
+    [ -n "$3" ] && echo "$3:rs=${6:-0};ws=${10:-0};rt=${7:-0};wt=${11:-0};io=${13:-0}"
+  done < /proc/diskstats 2>/dev/null
 
   # CPU: /proc/stat, 20 times with INTERVAL sleep
   echo "M CPUSTATS"

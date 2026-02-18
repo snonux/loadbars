@@ -106,7 +106,13 @@ func newRunState(cfg *config.Config, winW, winH int32) *runState {
 		showMem:        cfg.ShowMem,
 		showNet:        cfg.ShowNet,
 		showLoad:       cfg.ShowLoad,
-		loadPeak:       2.0, // minimum floor ensures meaningful scale on idle systems
+		// Use the fixed cap when set; otherwise start at the auto-scale floor of 2.0.
+		loadPeak:       func() float64 {
+			if cfg.LoadMax > 0 {
+				return cfg.LoadMax
+			}
+			return 2.0
+		}(),
 		showSeparators: cfg.ShowSeparators,
 		extended:       cfg.Extended,
 		winW:           winW,
@@ -182,6 +188,15 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 	case sdl.K_4, sdl.K_l:
 		state.showLoad = !state.showLoad
 		fmt.Println("==> Toggled show load:", state.showLoad)
+	case sdl.K_r:
+		// Reset load auto-scale peak to the floor so the bar rescales immediately.
+		// Has no effect when loadmax is fixed (cfg.LoadMax > 0).
+		if cfg.LoadMax == 0 {
+			state.loadPeak = 2.0
+			fmt.Println("==> Load peak reset to auto-scale floor (2.0)")
+		} else {
+			fmt.Println("==> Load peak reset ignored (fixed loadmax =", cfg.LoadMax, ")")
+		}
 	case sdl.K_e:
 		state.extended = !state.extended
 		fmt.Println("==> Toggled extended (peak line):", state.extended)
@@ -303,7 +318,7 @@ func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, sta
 	renderer.Clear()
 	if state.showLoad {
 		// Update the global load peak before drawing so bar scale is current.
-		updateLoadPeak(snap, state)
+		updateLoadPeak(snap, state, cfg.LoadMax)
 	}
 	drawBars(renderer, snap, cfg, state, numBars)
 	if state.showAvgLine {
@@ -730,7 +745,7 @@ func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *st
 }
 
 func printHotkeys() {
-	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net 4/l=load e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
+	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net 4/l=load r=reset load peak e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
 }
 
 // scaleLinkUp moves cfg.NetLink to the next higher link speed in linkScales.
@@ -887,11 +902,16 @@ func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.
 	return prev
 }
 
-// updateLoadPeak decays the global load peak and updates it with the current
-// maximum 1-min load across all hosts. The floor of 2.0 prevents a zero scale
-// on idle systems. The slow per-frame decay (× 0.9999) lets the scale recover
-// gradually after a spike rather than snapping back immediately.
-func updateLoadPeak(snap map[string]*stats.HostStats, state *runState) {
+// updateLoadPeak maintains the load scale used by the bar renderer.
+// When loadMax > 0, the scale is pinned to that fixed value every frame
+// (no decay, no tracking). When loadMax == 0, auto-scale is used: the
+// global peak decays slowly (× 0.9999 per frame) with a floor of 2.0,
+// and is updated with the current maximum 1-min load across all hosts.
+func updateLoadPeak(snap map[string]*stats.HostStats, state *runState, loadMax float64) {
+	if loadMax > 0 {
+		state.loadPeak = loadMax // fixed scale: override every frame, skip auto logic
+		return
+	}
 	state.loadPeak *= 0.9999 // slow per-frame decay toward idle baseline
 	if state.loadPeak < 2.0 {
 		state.loadPeak = 2.0

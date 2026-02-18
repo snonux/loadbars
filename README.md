@@ -72,13 +72,15 @@ All options can also be set in `~/.loadbarsrc` (key=value, no leading `--`). CLI
 | `--cpuaverage <n>` | Number of CPU samples used for average (and extended peak history) | 10 |
 | `--netaverage <n>` | Number of network samples used for average | 15 |
 | `--netlink <speed>` | Link speed for network utilization %: `mbit`, `10mbit`, `100mbit`, `gbit`, `10gbit` or a number | gbit |
-| `--showcores` | Show one bar per CPU core (vs one aggregate bar per host) | off |
+| `--cpumode <n>` | CPU display mode: 0 = aggregate bar, 1 = per-core bars, 2 = off | 0 |
 | `--showmem` | Show memory bars (RAM left, Swap right per host) | off |
 | `--shownet` | Show network bars (RX/TX across non-lo interfaces per host) | off |
 | `--extended` | Show extended display (1px peak line on CPU bars) | off |
 | `--title <text>` | Set title bar text | (empty) |
 | `--sshopts <opts>` | Extra SSH options passed to `ssh` (e.g. `-o ConnectTimeout=5`) | (empty) |
 | `--hasagent` | SSH key is already loaded in agent (skip extra agent checks) | off |
+| `--showload` | Show load average bars (1-min teal fill, 5-min yellow line, 15-min white line per host) | off |
+| `--loadmax <n>` | Fix the load bar full-height reference to `n` (e.g. `8` = core count); 0 = auto-scale | 0 |
 | `--maxbarsperrow <n>` | Max bars per row; 0 = unlimited (single row) | 0 |
 | `--help` | Show usage and exit | — |
 | `--version` | Print version and exit | — |
@@ -134,9 +136,11 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 
 | Key | Action |
 |-----|--------|
-| **1** | Toggle CPU cores (one bar per core vs one aggregate bar per host) |
+| **1** | Toggle CPU display mode: aggregate bar → per-core bars → off → aggregate |
 | **2** / **m** | Toggle memory bars (RAM left, Swap right per host) |
 | **3** / **n** | Toggle network bars (RX/TX summed across all non-lo interfaces per host) |
+| **4** / **l** | Toggle load average bars (1-min teal fill, 5-min yellow line, 15-min white line) |
+| **r** | Reset load auto-scale peak to floor (2.0) — has no effect when `loadmax` is fixed |
 | **e** | Toggle extended display (1px peak line on CPU bars: max system+user over last samples) |
 | **g** | Toggle global average CPU line (1px red line showing mean CPU usage across all hosts) |
 | **i** | Toggle global I/O average line (1px pink line showing mean iowait+IRQ across all hosts) |
@@ -178,6 +182,15 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 - `Txb` = Outgoing (transmitted) traffic in %, Color: Light green, normal green if >100% while using low netlink reference. Bar comes from bottom and is half width.
 
 When network bar is red: No non-loopback interface exists on the specific remote host.
+
+### Load average stuff
+
+- **Teal fill** from top downward: 1-minute load average, height proportional to the scale reference.
+- **Yellow 1px line**: 5-minute load average. Appears inside the fill when load is rising, below it when falling.
+- **White 1px line**: 15-minute load average. Same direction convention as the 5-min line.
+- **Scale reference** (shown in hover tooltip):
+  - *Auto-scale* (`loadmax=0`, default): the reference tracks the global maximum 1-min load across all hosts, decaying slowly over time (floor 2.0). Press **r** to reset it back to 2.0 immediately.
+  - *Fixed scale* (`loadmax=N`): the bar's full height always equals `N`. Useful when you know the core count and want a stable reference across sessions. Tooltip shows `Max:` instead of `Peak:`.
 
 **Aggregated interfaces:** Loadbars sums RX/TX across all non-loopback interfaces (e.g. `eth0`, `wlan0`, `enp0s3`) and shows the combined total. Loopback (`lo`) is always excluded.
 

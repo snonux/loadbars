@@ -37,7 +37,7 @@ func tooltipLines(bar *barDescriptor, snap map[string]*stats.HostStats, cfg *con
 	case barNet:
 		return netTooltipLines(bar, cfg, state)
 	case barLoad:
-		return loadTooltipLines(bar, h, state)
+		return loadTooltipLines(bar, h, cfg, state)
 	}
 	return nil
 }
@@ -101,8 +101,10 @@ func netTooltipLines(bar *barDescriptor, cfg *config.Config, state *runState) []
 }
 
 // loadTooltipLines returns tooltip text for a load-average bar showing
-// the smoothed 1/5/15-min averages and the current global peak scale.
-func loadTooltipLines(bar *barDescriptor, h *stats.HostStats, state *runState) []string {
+// the 1/5/15-min averages and the current scale reference.
+// When cfg.LoadMax > 0 the scale is fixed and the label reads "Max:";
+// otherwise it tracks the auto-scale peak and reads "Peak:".
+func loadTooltipLines(bar *barDescriptor, h *stats.HostStats, cfg *config.Config, state *runState) []string {
 	lines := []string{fmt.Sprintf("%s [load]", bar.host)}
 	l1, err1 := strconv.ParseFloat(strings.TrimSpace(h.LoadAvg1), 64)
 	l5, err5 := strconv.ParseFloat(strings.TrimSpace(h.LoadAvg5), 64)
@@ -111,11 +113,15 @@ func loadTooltipLines(bar *barDescriptor, h *stats.HostStats, state *runState) [
 		lines = append(lines, "No data yet")
 		return lines
 	}
+	scaleLabel := "Peak: "
+	if cfg.LoadMax > 0 {
+		scaleLabel = "Max:  "
+	}
 	lines = append(lines,
 		fmt.Sprintf("1min:  %.2f", l1),
 		fmt.Sprintf("5min:  %.2f", l5),
 		fmt.Sprintf("15min: %.2f", l15),
-		fmt.Sprintf("Peak:  %.2f", state.loadPeak),
+		fmt.Sprintf(scaleLabel+"%.2f", state.loadPeak),
 	)
 	return lines
 }

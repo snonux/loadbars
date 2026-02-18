@@ -30,6 +30,7 @@ type Config struct {
 	ShowMem        bool
 	ShowNet        bool
 	ShowLoad       bool
+	LoadMax        float64 // 0 = auto-scale; >0 = fixed full-height reference value
 	ShowSeparators bool
 	MaxBarsPerRow  int
 	SSHOpts        string
@@ -110,7 +111,7 @@ func (c *Config) parseReader(f *os.File) error {
 		"title": true, "barwidth": true, "cpuaverage": true, "extended": true,
 		"hasagent": true, "height": true, "maxwidth": true, "netaverage": true,
 		"netlink": true, "cpumode": true, "showcores": true, "showmem": true,
-		"showavgline": true, "showioavgline": true, "shownet": true, "showload": true, "showseparators": true,
+		"showavgline": true, "showioavgline": true, "shownet": true, "showload": true, "loadmax": true, "showseparators": true,
 		"maxbarsperrow": true, "sshopts": true, "cluster": true,
 	}
 	scanner := bufio.NewScanner(f)
@@ -188,6 +189,11 @@ func (c *Config) set(key, val string) {
 		c.ShowNet = parseBool(val)
 	case "showload":
 		c.ShowLoad = parseBool(val)
+	case "loadmax":
+		// Accept any non-negative float; 0 means auto-scale.
+		if f, err := strconv.ParseFloat(val, 64); err == nil && f >= 0 {
+			c.LoadMax = f
+		}
 	case "showseparators":
 		c.ShowSeparators = parseBool(val)
 	case "maxbarsperrow":
@@ -205,6 +211,8 @@ func (c *Config) writeTo(f *os.File) error {
 	w := bufio.NewWriter(f)
 	writeInt := func(key string, v int) { fmt.Fprintf(w, "%s=%d\n", key, v) }
 	writeStr := func(key, v string) { fmt.Fprintf(w, "%s=%s\n", key, v) }
+	// writeFloat uses %g to strip trailing zeros (e.g. 8 → "8", 8.5 → "8.5").
+	writeFloat := func(key string, v float64) { fmt.Fprintf(w, "%s=%g\n", key, v) }
 	writeBool := func(key string, v bool) {
 		val := "0"
 		if v {
@@ -226,6 +234,7 @@ func (c *Config) writeTo(f *os.File) error {
 	writeBool("showmem", c.ShowMem)
 	writeBool("shownet", c.ShowNet)
 	writeBool("showload", c.ShowLoad)
+	writeFloat("loadmax", c.LoadMax)
 	writeBool("showseparators", c.ShowSeparators)
 	writeInt("maxbarsperrow", c.MaxBarsPerRow)
 	writeStr("sshopts", c.SSHOpts)

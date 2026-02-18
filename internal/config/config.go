@@ -26,7 +26,7 @@ type Config struct {
 	NetLink    string
 	ShowAvgLine    bool
 	ShowIOAvgLine  bool
-	ShowCores      bool
+	CPUMode        int // constants.CPUModeAverage / CPUModeCores / CPUModeOff
 	ShowMem        bool
 	ShowNet        bool
 	ShowSeparators bool
@@ -46,7 +46,7 @@ func Default() Config {
 		MaxWidth:   1900,
 		NetAverage: 15,
 		NetLink:    "gbit",
-		ShowCores:     false,
+		CPUMode:       constants.CPUModeAverage, // start with aggregate bar only
 		ShowMem:       false,
 		ShowNet:       false,
 		MaxBarsPerRow: 0,
@@ -108,7 +108,7 @@ func (c *Config) parseReader(f *os.File) error {
 	validKeys := map[string]bool{
 		"title": true, "barwidth": true, "cpuaverage": true, "extended": true,
 		"hasagent": true, "height": true, "maxwidth": true, "netaverage": true,
-		"netlink": true, "showcores": true, "showmem": true,
+		"netlink": true, "cpumode": true, "showcores": true, "showmem": true,
 		"showavgline": true, "showioavgline": true, "shownet": true, "showseparators": true,
 		"maxbarsperrow": true, "sshopts": true, "cluster": true,
 	}
@@ -169,8 +169,18 @@ func (c *Config) set(key, val string) {
 		c.ShowAvgLine = parseBool(val)
 	case "showioavgline":
 		c.ShowIOAvgLine = parseBool(val)
+	case "cpumode":
+		// 0=average, 1=cores, 2=off — clamp to valid range
+		if n, err := strconv.Atoi(val); err == nil && n >= 0 && n < constants.CPUModeCount {
+			c.CPUMode = n
+		}
 	case "showcores":
-		c.ShowCores = parseBool(val)
+		// Backward-compatible: old boolean showcores maps to CPUMode
+		if parseBool(val) {
+			c.CPUMode = constants.CPUModeCores
+		} else {
+			c.CPUMode = constants.CPUModeAverage
+		}
 	case "showmem":
 		c.ShowMem = parseBool(val)
 	case "shownet":
@@ -209,7 +219,7 @@ func (c *Config) writeTo(f *os.File) error {
 	writeStr("netlink", c.NetLink)
 	writeBool("showavgline", c.ShowAvgLine)
 	writeBool("showioavgline", c.ShowIOAvgLine)
-	writeBool("showcores", c.ShowCores)
+	writeInt("cpumode", c.CPUMode)
 	writeBool("showmem", c.ShowMem)
 	writeBool("shownet", c.ShowNet)
 	writeBool("showseparators", c.ShowSeparators)

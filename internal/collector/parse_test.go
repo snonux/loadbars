@@ -44,29 +44,31 @@ func TestParseCPULine(t *testing.T) {
 
 func TestParseMemLine(t *testing.T) {
 	tests := []struct {
+		name      string
 		line      string
 		wantKey   string
 		wantValue int64
 		wantOK    bool
 	}{
-		{"MemTotal:       123456 kB", "MemTotal", 123456, true},
-		{"MemFree:         99999 kB", "MemFree", 99999, true},
-		{"Buffers:             0 kB", "Buffers", 0, true},
-		{"not a mem line", "", 0, false},
-		{"", "", 0, false},
+		{"MemTotal", "MemTotal:       123456 kB", "MemTotal", 123456, true},
+		{"MemFree", "MemFree:         99999 kB", "MemFree", 99999, true},
+		{"Buffers_zero", "Buffers:             0 kB", "Buffers", 0, true},
+		{"not_a_mem_line", "not a mem line", "", 0, false},
+		{"empty_string", "", "", 0, false},
 	}
 	for _, tt := range tests {
-		got, ok := ParseMemLine(tt.line)
-		if ok != tt.wantOK {
-			t.Errorf("ParseMemLine(%q) ok = %v, want %v", tt.line, ok, tt.wantOK)
-			continue
-		}
-		if !tt.wantOK {
-			continue
-		}
-		if got.Key != tt.wantKey || got.Value != tt.wantValue {
-			t.Errorf("ParseMemLine(%q) = %+v, want key=%q value=%d", tt.line, got, tt.wantKey, tt.wantValue)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := ParseMemLine(tt.line)
+			if ok != tt.wantOK {
+				t.Fatalf("ParseMemLine(%q) ok = %v, want %v", tt.line, ok, tt.wantOK)
+			}
+			if !tt.wantOK {
+				return
+			}
+			if got.Key != tt.wantKey || got.Value != tt.wantValue {
+				t.Errorf("ParseMemLine(%q) = %+v, want key=%q value=%d", tt.line, got, tt.wantKey, tt.wantValue)
+			}
+		})
 	}
 }
 

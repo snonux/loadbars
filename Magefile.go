@@ -40,7 +40,7 @@ func Install() error {
 	}
 	bin := filepath.Join(gopath, "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
-		return err
+		return fmt.Errorf("mkdir %s: %w", bin, err)
 	}
-	return sh.RunV("cp", "-v", binaryName, bin+"/")
+	return sh.RunV("cp", "-v", binaryName, filepath.Join(bin, binaryName))
 }

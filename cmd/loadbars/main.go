@@ -27,7 +27,7 @@ func main() {
 	flag.IntVar(&cfg.CPUAverage, "cpuaverage", cfg.CPUAverage, "Num of CPU samples for avg")
 	flag.IntVar(&cfg.NetAverage, "netaverage", cfg.NetAverage, "Num of net samples for avg")
 	flag.StringVar(&cfg.NetLink, "netlink", cfg.NetLink, "Link speed (mbit, 10mbit, 100mbit, gbit, 10gbit or number)")
-	flag.BoolVar(&cfg.ShowCores, "showcores", cfg.ShowCores, "Toggle core display")
+	flag.IntVar(&cfg.CPUMode, "cpumode", cfg.CPUMode, "CPU display mode (0=average, 1=cores, 2=off)")
 	flag.BoolVar(&cfg.ShowMem, "showmem", cfg.ShowMem, "Toggle mem display")
 	flag.BoolVar(&cfg.ShowNet, "shownet", cfg.ShowNet, "Toggle net display")
 	flag.BoolVar(&cfg.Extended, "extended", cfg.Extended, "Toggle extended display")

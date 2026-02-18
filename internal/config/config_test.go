@@ -25,9 +25,6 @@ func TestConfig_parseReader(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := Default()
-			f, _ := os.Open(os.DevNull)
-			defer f.Close()
-			// Use a temp file with the content since parseReader takes *os.File
 			dir := t.TempDir()
 			path := filepath.Join(dir, "rc")
 			if err := os.WriteFile(path, []byte(tt.input), 0600); err != nil {
@@ -54,7 +51,7 @@ func TestConfig_parseReader(t *testing.T) {
 func TestConfig_writeTo(t *testing.T) {
 	c := Default()
 	c.BarWidth = 25
-	c.ShowCores = true
+	c.CPUMode = 1 // CPUModeCores
 	dir := t.TempDir()
 	path := filepath.Join(dir, "out")
 	f, err := os.Create(path)
@@ -73,8 +70,8 @@ func TestConfig_writeTo(t *testing.T) {
 	if !bytes.Contains(data, []byte("barwidth=25")) {
 		t.Errorf("expected barwidth=25 in %s", data)
 	}
-	if !bytes.Contains(data, []byte("showcores=1")) {
-		t.Errorf("expected showcores=1 in %s", data)
+	if !bytes.Contains(data, []byte("cpumode=1")) {
+		t.Errorf("expected cpumode=1 in %s", data)
 	}
 }
 

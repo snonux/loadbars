@@ -141,7 +141,7 @@ func renderOneCPUBar(t *testing.T, systemPct, userPct, idlePct float64, extended
 
 	prev, cur := makeCPUPair(systemPct, userPct, idlePct)
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = false
 	cfg.ShowNet = false
 	cfg.Extended = extended
@@ -212,7 +212,7 @@ func TestMemBar_RamAndSwap(t *testing.T) {
 	defer surface.Free()
 
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = true
 	cfg.ShowNet = false
 
@@ -266,7 +266,7 @@ func TestNetBar_RxTx(t *testing.T) {
 	defer surface.Free()
 
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = false
 	cfg.ShowNet = true
 	cfg.NetLink = "gbit"
@@ -318,7 +318,7 @@ func TestNetBar_AggregatesAllInterfaces(t *testing.T) {
 	defer surface.Free()
 
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = false
 	cfg.ShowNet = true
 	cfg.NetLink = "gbit"
@@ -372,7 +372,7 @@ func TestMultiHost_BarCount(t *testing.T) {
 	defer surface.Free()
 
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = true
 	cfg.ShowNet = true
 
@@ -397,7 +397,7 @@ func TestMultiHost_BarCount(t *testing.T) {
 	}
 
 	snap := src.Snapshot()
-	numBars := countBars(snap, false, true, true)
+	numBars := countBars(snap, constants.CPUModeAverage, true, true)
 	if numBars != 6 {
 		t.Fatalf("expected 6 bars (2 hosts × 3), got %d", numBars)
 	}
@@ -418,7 +418,7 @@ func TestMultiHost_BarCount(t *testing.T) {
 }
 
 func TestCores_Toggle(t *testing.T) {
-	// With showCores=true and 2 cores, we get cpu + cpu0 + cpu1 = 3 CPU bars
+	// Three CPU mode states: average (1 bar), cores (3 bars), off (0 → floor 1)
 	hostStats := &stats.HostStats{
 		CPU: map[string]collector.CPULine{
 			"cpu":  {System: 500, User: 0, Idle: 500},
@@ -429,16 +429,22 @@ func TestCores_Toggle(t *testing.T) {
 
 	snap := map[string]*stats.HostStats{"host1": hostStats}
 
-	// showCores=true: should count 3 CPU bars
-	nWith := countBars(snap, true, false, false)
-	if nWith != 3 {
-		t.Errorf("showCores=true: expected 3 bars, got %d", nWith)
+	// CPUModeAverage: aggregate bar only (1 bar)
+	nAverage := countBars(snap, constants.CPUModeAverage, false, false)
+	if nAverage != 1 {
+		t.Errorf("CPUModeAverage: expected 1 bar, got %d", nAverage)
 	}
 
-	// showCores=false: should count 1 CPU bar (aggregate only)
-	nWithout := countBars(snap, false, false, false)
-	if nWithout != 1 {
-		t.Errorf("showCores=false: expected 1 bar, got %d", nWithout)
+	// CPUModeCores: aggregate + individual cores = cpu + cpu0 + cpu1 (3 bars)
+	nCores := countBars(snap, constants.CPUModeCores, false, false)
+	if nCores != 3 {
+		t.Errorf("CPUModeCores: expected 3 bars, got %d", nCores)
+	}
+
+	// CPUModeOff: no CPU bars → countBars floors to 1 (window always shows something)
+	nOff := countBars(snap, constants.CPUModeOff, false, false)
+	if nOff != 1 {
+		t.Errorf("CPUModeOff: expected 1 (floor), got %d", nOff)
 	}
 }
 
@@ -486,7 +492,7 @@ func TestNetBar_NoInterface(t *testing.T) {
 	defer surface.Free()
 
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = false
 	cfg.ShowNet = true
 
@@ -548,7 +554,7 @@ func TestRemainderPixels_AfterToggleMem(t *testing.T) {
 	src := &mockSource{data: hosts}
 
 	cfg := defaultTestConfig()
-	cfg.ShowCores = true
+	cfg.CPUMode = constants.CPUModeCores
 	cfg.ShowMem = true
 	cfg.ShowNet = false
 
@@ -589,7 +595,7 @@ func TestRemainderPixels_AfterToggleMem(t *testing.T) {
 // newHotkeyTestEnv creates a test environment with 1 host, 2 CPU cores, memory,
 // and 2 net interfaces. Returns all components needed for handleKey + drawFrame
 // pixel inspection tests.
-func newHotkeyTestEnv(t *testing.T, showCores, showMem, showNet bool) (
+func newHotkeyTestEnv(t *testing.T, cpuMode int, showMem, showNet bool) (
 	renderer *sdl.Renderer, surface *sdl.Surface,
 	cfg *config.Config, state *runState, src *mockSource,
 ) {
@@ -602,7 +608,7 @@ func newHotkeyTestEnv(t *testing.T, showCores, showMem, showNet bool) (
 	}
 
 	cfg = defaultTestConfig()
-	cfg.ShowCores = showCores
+	cfg.CPUMode = cpuMode
 	cfg.ShowMem = showMem
 	cfg.ShowNet = showNet
 
@@ -662,36 +668,52 @@ func TestHandleKey_UnknownKey(t *testing.T) {
 		t.Error("expected handleKey(x) to return false")
 	}
 	// State should be unchanged
-	if state.showCores != cfg.ShowCores || state.showMem != cfg.ShowMem || state.showNet != cfg.ShowNet {
+	if state.cpuMode != cfg.CPUMode || state.showMem != cfg.ShowMem || state.showNet != cfg.ShowNet {
 		t.Error("unknown key should not change state")
 	}
 }
 
 func TestHandleKey_ToggleCores(t *testing.T) {
-	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, false)
+	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, constants.CPUModeAverage, false, false)
 	defer renderer.Destroy()
 	defer surface.Free()
 
-	// Before: showCores=false → 1 CPU bar (aggregate)
+	// State 0 (CPUModeAverage): single aggregate bar spans full width
 	drawFrame(renderer, src, cfg, state)
-	// The single bar spans full width; check it has color at x=100
-	assertPixelColor(t, surface, 100, 95, constants.Blue, 5, "aggregate CPU bar before toggle")
+	assertPixelColor(t, surface, 100, 95, constants.Blue, 5, "aggregate CPU bar in average mode")
 
-	// Press '1' to toggle cores on
+	// Press '1': CPUModeAverage → CPUModeCores
 	handleKey(sdl.K_1, nil, cfg, state)
-	if !state.showCores {
-		t.Fatal("expected showCores=true after pressing 1")
+	if state.cpuMode != constants.CPUModeCores {
+		t.Fatalf("expected cpuMode=CPUModeCores after first press, got %d", state.cpuMode)
 	}
 
-	// After: showCores=true → 3 CPU bars (cpu + cpu0 + cpu1)
+	// State 1 (CPUModeCores): 3 CPU bars (cpu + cpu0 + cpu1), each ~66px wide at 200px window
 	drawFrame(renderer, src, cfg, state)
-	// With 3 bars at width 200: barWidth=66, bars at x=0, x=66, x=132
-	// Third bar (cpu1) should have color
-	assertPixelColor(t, surface, 140, 95, constants.Blue, 5, "cpu1 bar after toggle")
+	// Third bar (cpu1) starts at x=133; check it has color at x=140
+	assertPixelColor(t, surface, 140, 95, constants.Blue, 5, "cpu1 bar visible in cores mode")
+
+	// Press '1': CPUModeCores → CPUModeOff
+	handleKey(sdl.K_1, nil, cfg, state)
+	if state.cpuMode != constants.CPUModeOff {
+		t.Fatalf("expected cpuMode=CPUModeOff after second press, got %d", state.cpuMode)
+	}
+
+	// State 2 (CPUModeOff): no CPU bars; countBars returns 1 (floor) so window is still drawn
+	nOff := countBars(src.Snapshot(), constants.CPUModeOff, false, false)
+	if nOff != 1 {
+		t.Errorf("CPUModeOff: expected countBars=1 (floor), got %d", nOff)
+	}
+
+	// Press '1': CPUModeOff → CPUModeAverage (wraps around)
+	handleKey(sdl.K_1, nil, cfg, state)
+	if state.cpuMode != constants.CPUModeAverage {
+		t.Fatalf("expected cpuMode=CPUModeAverage after third press, got %d", state.cpuMode)
+	}
 }
 
 func TestHandleKey_ToggleMem(t *testing.T) {
-	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, false)
+	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, constants.CPUModeAverage, false, false)
 	defer renderer.Destroy()
 	defer surface.Free()
 
@@ -728,7 +750,7 @@ func TestHandleKey_ToggleMemAlias(t *testing.T) {
 }
 
 func TestHandleKey_ToggleNet(t *testing.T) {
-	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, false)
+	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, constants.CPUModeAverage, false, false)
 	defer renderer.Destroy()
 	defer surface.Free()
 
@@ -764,7 +786,7 @@ func TestHandleKey_ToggleNetAlias(t *testing.T) {
 }
 
 func TestHandleKey_ToggleExtended(t *testing.T) {
-	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, false)
+	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, constants.CPUModeAverage, false, false)
 	defer renderer.Destroy()
 	defer surface.Free()
 
@@ -852,7 +874,7 @@ func TestHandleKey_WriteConfig(t *testing.T) {
 	state := newRunState(cfg, 200, 100)
 	// Modify state values that should be copied to config
 	state.showAvgLine = true
-	state.showCores = true
+	state.cpuMode = constants.CPUModeCores
 	state.showMem = true
 	state.showNet = true
 	state.extended = true
@@ -862,8 +884,8 @@ func TestHandleKey_WriteConfig(t *testing.T) {
 	if !cfg.ShowAvgLine {
 		t.Error("expected ShowAvgLine=true in config after 'w'")
 	}
-	if !cfg.ShowCores {
-		t.Error("expected ShowCores=true in config after 'w'")
+	if cfg.CPUMode != constants.CPUModeCores {
+		t.Errorf("expected CPUMode=CPUModeCores in config after 'w', got %d", cfg.CPUMode)
 	}
 	if !cfg.ShowMem {
 		t.Error("expected ShowMem=true in config after 'w'")
@@ -877,7 +899,7 @@ func TestHandleKey_WriteConfig(t *testing.T) {
 }
 
 func TestHandleKey_LinkScaleUp(t *testing.T) {
-	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, false, false, true)
+	renderer, surface, cfg, state, src := newHotkeyTestEnv(t, constants.CPUModeAverage, false, true)
 	defer renderer.Destroy()
 	defer surface.Free()
 
@@ -950,7 +972,7 @@ func TestGlobalAvgLine_SingleHost(t *testing.T) {
 
 	prev, cur := makeCPUPair(40, 40, 20) // 80% used (40 sys + 40 user)
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = false
 	cfg.ShowNet = false
 
@@ -988,7 +1010,7 @@ func TestGlobalAvgLine_MultiHost(t *testing.T) {
 	prev2, cur2 := makeCPUPair(20, 20, 60) // 40% used
 
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = false
 	cfg.ShowNet = false
 
@@ -1023,7 +1045,7 @@ func TestGlobalAvgLine_Disabled(t *testing.T) {
 
 	prev, cur := makeCPUPair(40, 40, 20) // 80% used
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = false
 	cfg.ShowNet = false
 
@@ -1284,7 +1306,7 @@ func TestHandleKey_ToggleSeparators(t *testing.T) {
 }
 
 func TestSeparator_TwoHosts_Enabled(t *testing.T) {
-	// Two hosts (100% system = blue) with separators enabled: yellow pixel at boundary
+	// Two hosts (100% system = blue) with separators enabled: red pixel at boundary
 	const w, h int32 = 200, 100
 
 	renderer, surface, err := createTestRenderer(w, h)
@@ -1298,7 +1320,7 @@ func TestSeparator_TwoHosts_Enabled(t *testing.T) {
 	prev2, cur2 := makeCPUPair(100, 0, 0)
 
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = false
 	cfg.ShowNet = false
 	cfg.ShowSeparators = true
@@ -1321,7 +1343,7 @@ func TestSeparator_TwoHosts_Enabled(t *testing.T) {
 }
 
 func TestSeparator_TwoHosts_Disabled(t *testing.T) {
-	// Two hosts (100% system = blue) with separators disabled: no yellow at boundary
+	// Two hosts (100% system = blue) with separators disabled: no red at boundary
 	const w, h int32 = 200, 100
 
 	renderer, surface, err := createTestRenderer(w, h)
@@ -1335,7 +1357,7 @@ func TestSeparator_TwoHosts_Disabled(t *testing.T) {
 	prev2, cur2 := makeCPUPair(100, 0, 0)
 
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = false
 	cfg.ShowNet = false
 	cfg.ShowSeparators = false
@@ -1370,7 +1392,7 @@ func TestSeparator_SingleHost(t *testing.T) {
 
 	prev, cur := makeCPUPair(50, 30, 20)
 	cfg := defaultTestConfig()
-	cfg.ShowCores = false
+	cfg.CPUMode = constants.CPUModeAverage
 	cfg.ShowMem = false
 	cfg.ShowNet = false
 	cfg.ShowSeparators = true

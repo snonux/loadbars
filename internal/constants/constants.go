@@ -16,6 +16,14 @@ const (
 	UserYellowThreshold = 50   // CPU user % for dark yellow
 )
 
+// CPUMode controls which CPU bars are displayed (cycles with the 1 key).
+const (
+	CPUModeAverage = 0 // Show only the aggregate CPU bar (default)
+	CPUModeCores   = 1 // Show individual core bars plus the aggregate
+	CPUModeOff     = 2 // Hide all CPU bars entirely
+	CPUModeCount   = 3 // Total number of CPU modes for cycling
+)
+
 // Exit codes
 const (
 	Success  = 0
@@ -52,7 +60,7 @@ var (
 )
 
 // BytesPerSec for link speed reference (bytes per second at given mbit)
-var (
+const (
 	BytesMbit    = 125000
 	Bytes10Mbit  = 1250000
 	Bytes100Mbit = 12500000

@@ -7,7 +7,7 @@ type CPULine struct {
 }
 
 // Total returns sum of all CPU counters.
-func (c *CPULine) Total() int64 {
+func (c CPULine) Total() int64 {
 	return c.User + c.Nice + c.System + c.Idle + c.Iowait + c.IRQ + c.SoftIRQ + c.Steal + c.Guest + c.GuestNice
 }
 

@@ -17,7 +17,9 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-const smoothFactor = 0.12 // blend toward target each frame; lower = smoother
+// smoothFactor controls how quickly bars blend toward their target values each frame.
+// Lower values produce smoother animations.
+const smoothFactor = 0.12
 
 // linkScales lists the supported network link speeds in ascending order,
 // used by the f/v hotkeys to cycle through link scale values.
@@ -27,7 +29,7 @@ var linkScales = []string{"mbit", "10mbit", "100mbit", "gbit", "10gbit"}
 type runState struct {
 	showAvgLine    bool
 	showIOAvgLine  bool
-	showCores      bool
+	cpuMode        int // constants.CPUModeAverage / CPUModeCores / CPUModeOff
 	showMem        bool
 	showNet        bool
 	showSeparators bool
@@ -40,27 +42,9 @@ type runState struct {
 	smoothedNet    map[string]*struct{ rxPct, txPct float64 }
 	prevNet        map[string]stats.NetStamp // aggregated (summed) previous net stamp per host
 	peakHistory    map[string][]float64
-}
-
-// newRunState builds initial run state from config.
-func newRunState(cfg *config.Config, winW, winH int32) *runState {
-	return &runState{
-		showAvgLine:    cfg.ShowAvgLine,
-		showIOAvgLine:  cfg.ShowIOAvgLine,
-		showCores:      cfg.ShowCores,
-		showMem:        cfg.ShowMem,
-		showNet:        cfg.ShowNet,
-		showSeparators: cfg.ShowSeparators,
-		extended:       cfg.Extended,
-		winW:           winW,
-		winH:           winH,
-		prevCPU:        make(map[string]collector.CPULine),
-		smoothedCPU:    make(map[string]*[10]float64),
-		smoothedMem:    make(map[string]*struct{ ramUsed, swapUsed float64 }),
-		smoothedNet:    make(map[string]*struct{ rxPct, txPct float64 }),
-		prevNet:        make(map[string]stats.NetStamp),
-		peakHistory:    make(map[string][]float64),
-	}
+	mouseX         int32     // last known mouse X position (for tooltip hit testing)
+	mouseY         int32     // last known mouse Y position (for tooltip hit testing)
+	mouseLastMove  time.Time // timestamp of last mouse movement; tooltip hidden after 3s idle
 }
 
 // Run runs the SDL display loop until ctx is cancelled or user presses 'q'.
@@ -111,6 +95,29 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 	}
 }
 
+// newRunState builds initial run state from config.
+func newRunState(cfg *config.Config, winW, winH int32) *runState {
+	return &runState{
+		showAvgLine:    cfg.ShowAvgLine,
+		showIOAvgLine:  cfg.ShowIOAvgLine,
+		cpuMode:        cfg.CPUMode,
+		showMem:        cfg.ShowMem,
+		showNet:        cfg.ShowNet,
+		showSeparators: cfg.ShowSeparators,
+		extended:       cfg.Extended,
+		winW:           winW,
+		winH:           winH,
+		prevCPU:        make(map[string]collector.CPULine),
+		smoothedCPU:    make(map[string]*[10]float64),
+		smoothedMem:    make(map[string]*struct{ ramUsed, swapUsed float64 }),
+		smoothedNet:    make(map[string]*struct{ rxPct, txPct float64 }),
+		prevNet:        make(map[string]stats.NetStamp),
+		peakHistory:    make(map[string][]float64),
+		mouseX:         -1, // off-screen until first mouse move
+		mouseY:         -1,
+	}
+}
+
 func clampInt(v, min, max int) int {
 	if v < min {
 		return min
@@ -134,6 +141,9 @@ func handleEvents(window *sdl.Window, cfg *config.Config, state *runState) bool 
 			if handleKey(ev.Keysym.Sym, window, cfg, state) {
 				return true
 			}
+		case *sdl.MouseMotionEvent:
+			state.mouseX, state.mouseY = ev.X, ev.Y
+			state.mouseLastMove = time.Now()
 		case *sdl.WindowEvent:
 			if ev.Event == sdl.WINDOWEVENT_RESIZED {
 				state.winW, state.winH = ev.Data1, ev.Data2
@@ -149,8 +159,16 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 	case sdl.K_q:
 		return true
 	case sdl.K_1:
-		state.showCores = !state.showCores
-		fmt.Println("==> Toggled show cores:", state.showCores)
+		// Cycle through three CPU display modes: average → all cores → off → average
+		state.cpuMode = (state.cpuMode + 1) % constants.CPUModeCount
+		switch state.cpuMode {
+		case constants.CPUModeAverage:
+			fmt.Println("==> CPU: average bar only")
+		case constants.CPUModeCores:
+			fmt.Println("==> CPU: individual cores")
+		case constants.CPUModeOff:
+			fmt.Println("==> CPU: off")
+		}
 	case sdl.K_2, sdl.K_m:
 		state.showMem = !state.showMem
 		fmt.Println("==> Toggled show mem:", state.showMem)
@@ -194,7 +212,7 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 	case sdl.K_w:
 		cfg.ShowAvgLine = state.showAvgLine
 		cfg.ShowIOAvgLine = state.showIOAvgLine
-		cfg.ShowCores = state.showCores
+		cfg.CPUMode = state.cpuMode
 		cfg.ShowMem = state.showMem
 		cfg.ShowNet = state.showNet
 		cfg.ShowSeparators = state.showSeparators
@@ -270,7 +288,7 @@ func barRect(winW, winH int32, numBars, maxPerRow, barIndex int) (x, y, w, h int
 // When showAvgLine/showIOAvgLine are enabled, global average lines are drawn on top.
 func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, state *runState) {
 	snap := src.Snapshot()
-	numBars := countBars(snap, state.showCores, state.showMem, state.showNet)
+	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet)
 	// Always clear the entire window before drawing. SDL2 uses double-buffering,
 	// so skipping clear leaves stale content in the back buffer.
 	renderer.SetDrawColor(0, 0, 0, 255)
@@ -282,13 +300,15 @@ func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, sta
 	if state.showIOAvgLine {
 		drawGlobalIOAvgLine(renderer, snap, state, numBars, cfg.MaxBarsPerRow)
 	}
+	// Draw mouse-over tooltip and host highlight inversion on top of all bars
+	drawOverlay(renderer, snap, cfg, state)
 }
 
-func countBars(snap map[string]*stats.HostStats, showCores, showMem, showNet bool) int {
+func countBars(snap map[string]*stats.HostStats, cpuMode int, showMem, showNet bool) int {
 	n := 0
 	for _, host := range sortedHosts(snap) {
 		if h := snap[host]; h != nil {
-			n += len(sortedCPUNames(h.CPU, showCores))
+			n += len(sortedCPUNames(h.CPU, cpuMode))
 			if showMem {
 				n++
 			}
@@ -430,7 +450,7 @@ func drawGlobalIOAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStat
 // drawHostBars draws CPU, mem, and net bars for one host and advances barIndex.
 // maxPerRow controls multi-row wrapping (0 = single row).
 func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *config.Config, state *runState, numBars, maxPerRow int, barIndex *int) {
-	cpuNames := sortedCPUNames(h.CPU, state.showCores)
+	cpuNames := sortedCPUNames(h.CPU, state.cpuMode)
 	for _, name := range cpuNames {
 		key := host + ";" + name
 		cur := h.CPU[name]
@@ -506,14 +526,20 @@ func sortedHosts(snap map[string]*stats.HostStats) []string {
 	return out
 }
 
-func sortedCPUNames(cpu map[string]collector.CPULine, showCores bool) []string {
+func sortedCPUNames(cpu map[string]collector.CPULine, cpuMode int) []string {
+	// CPUModeOff: hide all CPU bars
+	if cpuMode == constants.CPUModeOff {
+		return nil
+	}
 	var names []string
 	for name := range cpu {
 		if name == "cpu" {
+			// Aggregate bar always shown unless CPUModeOff
 			names = append(names, "cpu")
 			continue
 		}
-		if showCores {
+		// Individual core bars only shown in CPUModeCores
+		if cpuMode == constants.CPUModeCores {
 			names = append(names, name)
 		}
 	}

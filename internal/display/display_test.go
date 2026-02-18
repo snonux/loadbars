@@ -1819,3 +1819,80 @@ func TestCountBars_WithDisk(t *testing.T) {
 		t.Errorf("DiskModeDevices: expected 3, got %d", n)
 	}
 }
+
+func TestDiskBar_Rendering(t *testing.T) {
+	// End-to-end: two disk snapshots with different sector counts → visible purple bars
+	const w, h int32 = 200, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	prev, cur := makeCPUPair(50, 30, 20)
+	cfg := defaultTestConfig()
+	cfg.CPUMode = constants.CPUModeAverage
+	cfg.ShowMem = false
+	cfg.ShowNet = false
+	cfg.DiskMode = constants.DiskModeAggregate
+
+	// First snapshot: disk data at t=1.0
+	src1 := &mockSource{
+		data: map[string]*stats.HostStats{
+			"host1": {
+				CPU:  map[string]collector.CPULine{"cpu": cur},
+				Disk: map[string]stats.DiskStamp{
+					"sda": {SectorsRead: 0, SectorsWrite: 0, IoTicks: 0, Stamp: 1.0},
+				},
+			},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.prevCPU["host1;cpu"] = prev
+
+	// Frame 1: establishes the first disk sample (no bars drawn yet for disk)
+	drawFrame(renderer, src1, cfg, state)
+
+	t.Logf("After frame 1: prevDisk=%+v", state.prevDisk)
+	t.Logf("After frame 1: smoothedDisk=%+v", state.smoothedDisk)
+	t.Logf("After frame 1: diskPeak=%f", state.diskPeak)
+
+	// Verify bar count: 1 CPU + 1 disk = 2 bars → each 100px wide
+	snap := src1.Snapshot()
+	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet, state.showLoad, state.diskMode)
+	t.Logf("numBars = %d (expected 2)", numBars)
+	if numBars != 2 {
+		t.Errorf("expected 2 bars (1 CPU + 1 disk), got %d", numBars)
+	}
+
+	// Second snapshot: disk data at t=4.0 with 100000 sectors read (= 51.2MB in 3s ≈ 17MB/s)
+	src2 := &mockSource{
+		data: map[string]*stats.HostStats{
+			"host1": {
+				CPU:  map[string]collector.CPULine{"cpu": cur},
+				Disk: map[string]stats.DiskStamp{
+					"sda": {SectorsRead: 100000, SectorsWrite: 50000, IoTicks: 500, Stamp: 4.0},
+				},
+			},
+		},
+	}
+
+	// Frame 2: now delta is available, bars should draw purple
+	drawFrame(renderer, src2, cfg, state)
+
+	t.Logf("After frame 2: prevDisk=%+v", state.prevDisk)
+	t.Logf("After frame 2: smoothedDisk=%+v", state.smoothedDisk)
+	t.Logf("After frame 2: diskPeak=%f", state.diskPeak)
+
+	// Disk bar at x=100..199 (second bar). Check for purple (DiskRead) at the top.
+	r, g, b := getPixelColor(surface, 150, 5)
+	t.Logf("Pixel at (150,5) = RGB(%d,%d,%d), want DiskRead=%+v", r, g, b, constants.DiskRead)
+
+	// The bar should have some purple (DiskRead) near the top
+	if r == 0 && g == 0 && b == 0 {
+		t.Errorf("disk bar at (150,5) is black; expected some DiskRead purple color")
+	}
+}

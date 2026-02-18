@@ -18,7 +18,7 @@ var nvmePartition = regexp.MustCompile(`^nvme\d+n\d+p\d+$`)
 // isWholeDisk returns true if the device name represents a whole disk (not a partition,
 // loop, ram, or device-mapper device). Used to filter /proc/diskstats entries.
 func isWholeDisk(name string) bool {
-	if strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "ram") || strings.HasPrefix(name, "dm-") {
+	if strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "ram") || strings.HasPrefix(name, "dm-") || strings.HasPrefix(name, "zram") {
 		return false
 	}
 	if partitionSuffix.MatchString(name) {
@@ -116,22 +116,23 @@ func updateDiskPeak(snap map[string]*stats.HostStats, state *runState, diskMax f
 // drawDiskBarSmoothed draws a single disk bar with read (top, purple) and write (bottom,
 // darker purple). Returns the current DiskStamp to be stored as previous for the next frame.
 func drawDiskBarSmoothed(renderer *sdl.Renderer, cur stats.DiskStamp, cfg *runState, smoothed *struct{ readPct, writePct float64 }, prev stats.DiskStamp, factor float64, barW, x, y, barH int32, extended bool) stats.DiskStamp {
-	// Clear this slot to black
-	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
+	// Clear this slot to a dim purple so the bar is visible even when idle.
+	// This distinguishes "disk bar present but idle" from background.
+	renderer.SetDrawColor(0x18, 0x00, 0x28, 255)
 	renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: barH})
 
 	// Only recompute when the collector has provided new data (same guard as net bars).
 	if cur.Stamp > prev.Stamp && prev.Stamp > 0 {
 		prev = smoothDiskUtilization(cur, prev, cfg, smoothed, factor)
-	} else if prev.Stamp == 0 {
-		// First sample: record but don't draw yet (no delta available)
-		return cur
+	} else if prev.Stamp == 0 && cur.Stamp > 0 {
+		// First sample: record it but can't compute delta yet.
+		prev = cur
 	}
 
 	drawDiskHalves(renderer, smoothed, x, y, barW, barH)
 
 	// In extended mode, overlay a utilization % line
-	if extended {
+	if extended && prev.Stamp > 0 {
 		drawDiskUtilLine(renderer, cur, prev, cfg, x, y, barW, barH)
 	}
 	return prev

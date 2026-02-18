@@ -6,8 +6,8 @@ import "github.com/veandco/go-sdl2/sdl"
 // Each glyph is 7 rows of 5 bits (MSB = leftmost pixel).
 
 const (
-	glyphW = 5 // pixels per character width
-	glyphH = 7 // pixels per character height
+	glyphW  = 5 // pixels per character width
+	glyphH  = 7 // pixels per character height
 	charGap = 1 // horizontal gap between characters
 )
 

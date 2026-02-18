@@ -14,16 +14,16 @@ import (
 // Config holds all loadbars configuration (file + CLI).
 // Defaults match the Perl Shared.pm %C.
 type Config struct {
-	Hosts      []string // Each entry is "host" or "host:user"
-	Title      string
-	BarWidth   int
-	CPUAverage int
-	Extended   bool
-	HasAgent   bool
-	Height     int
-	MaxWidth   int
-	NetAverage int
-	NetLink    string
+	Hosts          []string // Each entry is "host" or "host:user"
+	Title          string
+	BarWidth       int
+	CPUAverage     int
+	Extended       bool
+	HasAgent       bool
+	Height         int
+	MaxWidth       int
+	NetAverage     int
+	NetLink        string
 	ShowAvgLine    bool
 	ShowIOAvgLine  bool
 	CPUMode        int // constants.CPUModeAverage / CPUModeCores / CPUModeOff
@@ -40,14 +40,14 @@ type Config struct {
 // Default returns a Config with default values.
 func Default() Config {
 	return Config{
-		BarWidth:   1200,
-		CPUAverage: 10,
-		Extended:   false,
-		HasAgent:   false,
-		Height:     150,
-		MaxWidth:   1900,
-		NetAverage: 15,
-		NetLink:    "gbit",
+		BarWidth:      1200,
+		CPUAverage:    10,
+		Extended:      false,
+		HasAgent:      false,
+		Height:        150,
+		MaxWidth:      1900,
+		NetAverage:    15,
+		NetLink:       "gbit",
 		CPUMode:       constants.CPUModeAverage, // start with aggregate bar only
 		ShowMem:       false,
 		ShowNet:       false,
@@ -137,7 +137,14 @@ func (c *Config) parseReader(f *os.File) error {
 	return scanner.Err()
 }
 
+// set applies a single key=value pair to the config, delegating to focused helpers.
 func (c *Config) set(key, val string) {
+	c.setSizeAndTuning(key, val)
+	c.setDisplayFlags(key, val)
+}
+
+// setSizeAndTuning handles window dimension, SSH, sampling, and identity keys.
+func (c *Config) setSizeAndTuning(key, val string) {
 	switch key {
 	case "title":
 		c.Title = val
@@ -149,8 +156,6 @@ func (c *Config) set(key, val string) {
 		if n, err := strconv.Atoi(val); err == nil {
 			c.CPUAverage = n
 		}
-	case "extended":
-		c.Extended = parseBool(val)
 	case "hasagent":
 		c.HasAgent = parseBool(val)
 	case "height":
@@ -167,6 +172,22 @@ func (c *Config) set(key, val string) {
 		}
 	case "netlink":
 		c.NetLink = val
+	case "maxbarsperrow":
+		if n, err := strconv.Atoi(val); err == nil {
+			c.MaxBarsPerRow = n
+		}
+	case "sshopts":
+		c.SSHOpts = val
+	case "cluster":
+		c.Cluster = val
+	}
+}
+
+// setDisplayFlags handles keys that control what is shown and how CPU/load are scaled.
+func (c *Config) setDisplayFlags(key, val string) {
+	switch key {
+	case "extended":
+		c.Extended = parseBool(val)
 	case "showavgline":
 		c.ShowAvgLine = parseBool(val)
 	case "showioavgline":
@@ -196,14 +217,6 @@ func (c *Config) set(key, val string) {
 		}
 	case "showseparators":
 		c.ShowSeparators = parseBool(val)
-	case "maxbarsperrow":
-		if n, err := strconv.Atoi(val); err == nil {
-			c.MaxBarsPerRow = n
-		}
-	case "sshopts":
-		c.SSHOpts = val
-	case "cluster":
-		c.Cluster = val
 	}
 }
 

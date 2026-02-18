@@ -224,8 +224,8 @@ func TestMemBar_RamAndSwap(t *testing.T) {
 					"cpu": {User: 100, System: 100, Idle: 800}, // needed so countBars > 0
 				},
 				Mem: map[string]int64{
-					"MemTotal": 1000,
-					"MemFree":  400, // 60% used
+					"MemTotal":  1000,
+					"MemFree":   400, // 60% used
 					"SwapTotal": 1000,
 					"SwapFree":  600, // 40% used
 				},
@@ -385,13 +385,13 @@ func TestMultiHost_BarCount(t *testing.T) {
 		data: map[string]*stats.HostStats{
 			"alpha": {
 				CPU: map[string]collector.CPULine{"cpu": alphaCur},
-				Mem:  map[string]int64{"MemTotal": 100, "MemFree": 50, "SwapTotal": 0, "SwapFree": 0},
-				Net:  map[string]stats.NetStamp{"eth0": {B: 0, Tb: 0, Stamp: 1.0}},
+				Mem: map[string]int64{"MemTotal": 100, "MemFree": 50, "SwapTotal": 0, "SwapFree": 0},
+				Net: map[string]stats.NetStamp{"eth0": {B: 0, Tb: 0, Stamp: 1.0}},
 			},
 			"beta": {
 				CPU: map[string]collector.CPULine{"cpu": betaCur},
-				Mem:  map[string]int64{"MemTotal": 100, "MemFree": 50, "SwapTotal": 0, "SwapFree": 0},
-				Net:  map[string]stats.NetStamp{"eth0": {B: 0, Tb: 0, Stamp: 1.0}},
+				Mem: map[string]int64{"MemTotal": 100, "MemFree": 50, "SwapTotal": 0, "SwapFree": 0},
+				Net: map[string]stats.NetStamp{"eth0": {B: 0, Tb: 0, Stamp: 1.0}},
 			},
 		},
 	}
@@ -631,7 +631,7 @@ func newHotkeyTestEnv(t *testing.T, cpuMode int, showMem, showNet bool) (
 					"SwapFree":  600,
 				},
 				Net: map[string]stats.NetStamp{
-					"eth0": {B: 12500000, Tb: 6250000, Stamp: 2.0},
+					"eth0":  {B: 12500000, Tb: 6250000, Stamp: 2.0},
 					"wlan0": {B: 1000000, Tb: 500000, Stamp: 2.0},
 				},
 			},
@@ -1216,7 +1216,7 @@ func TestGlobalIOAvgLine_MultiHost(t *testing.T) {
 	defer surface.Free()
 
 	prev1, cur1 := makeCPUPairWithIO(10, 10, 20, 20, 5, 5) // 30% IO
-	prev2, cur2 := makeCPUPair(40, 40, 20)                   // 0% IO
+	prev2, cur2 := makeCPUPair(40, 40, 20)                 // 0% IO
 
 	cfg := defaultTestConfig()
 
@@ -1554,9 +1554,9 @@ func TestMultiRow_DrawFrame(t *testing.T) {
 	cfg.MaxBarsPerRow = 2
 
 	prev1, cur1 := makeCPUPair(100, 0, 0) // all system → blue
-	prev2, cur2 := makeCPUPair(0, 100, 0)  // all user → yellow
-	prev3, cur3 := makeCPUPair(0, 0, 100)  // all idle → black
-	prev4, cur4 := makeCPUPair(100, 0, 0)  // all system → blue
+	prev2, cur2 := makeCPUPair(0, 100, 0) // all user → yellow
+	prev3, cur3 := makeCPUPair(0, 0, 100) // all idle → black
+	prev4, cur4 := makeCPUPair(100, 0, 0) // all system → blue
 
 	src := &mockSource{
 		data: map[string]*stats.HostStats{

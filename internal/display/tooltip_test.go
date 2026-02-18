@@ -261,10 +261,10 @@ func TestTooltipLines_Mem(t *testing.T) {
 		"myhost": {
 			CPU: map[string]collector.CPULine{"cpu": {}},
 			Mem: map[string]int64{
-				"MemTotal":  8*1024*1024, // 8 GB in KB
-				"MemFree":   2*1024*1024,
-				"SwapTotal": 4*1024*1024,
-				"SwapFree":  3*1024*1024,
+				"MemTotal":  8 * 1024 * 1024, // 8 GB in KB
+				"MemFree":   2 * 1024 * 1024,
+				"SwapTotal": 4 * 1024 * 1024,
+				"SwapFree":  3 * 1024 * 1024,
 			},
 		},
 	}

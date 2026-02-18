@@ -16,9 +16,9 @@ import (
 const mouseIdleTimeout = 3 * time.Second
 
 const (
-	tooltipScale   int32 = 2 // pixel scale for bitmap font
-	tooltipPadX    int32 = 6 // horizontal padding inside tooltip box
-	tooltipPadY    int32 = 4 // vertical padding inside tooltip box
+	tooltipScale   int32 = 2  // pixel scale for bitmap font
+	tooltipPadX    int32 = 6  // horizontal padding inside tooltip box
+	tooltipPadY    int32 = 4  // vertical padding inside tooltip box
 	tooltipOffsetX int32 = 12 // offset from cursor to tooltip
 	tooltipOffsetY int32 = 12
 )

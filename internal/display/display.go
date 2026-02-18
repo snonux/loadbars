@@ -49,6 +49,37 @@ type runState struct {
 	mouseLastMove  time.Time // timestamp of last mouse movement; tooltip hidden after 3s idle
 }
 
+// newRunState builds initial run state from config.
+// When cfg.LoadMax > 0 the load bar uses a fixed scale; otherwise it
+// starts at the auto-scale floor of 2.0 and tracks the live maximum.
+func newRunState(cfg *config.Config, winW, winH int32) *runState {
+	initLoadPeak := 2.0
+	if cfg.LoadMax > 0 {
+		initLoadPeak = cfg.LoadMax
+	}
+	return &runState{
+		showAvgLine:    cfg.ShowAvgLine,
+		showIOAvgLine:  cfg.ShowIOAvgLine,
+		cpuMode:        cfg.CPUMode,
+		showMem:        cfg.ShowMem,
+		showNet:        cfg.ShowNet,
+		showLoad:       cfg.ShowLoad,
+		loadPeak:       initLoadPeak,
+		showSeparators: cfg.ShowSeparators,
+		extended:       cfg.Extended,
+		winW:           winW,
+		winH:           winH,
+		prevCPU:        make(map[string]collector.CPULine),
+		smoothedCPU:    make(map[string]*[10]float64),
+		smoothedMem:    make(map[string]*struct{ ramUsed, swapUsed float64 }),
+		smoothedNet:    make(map[string]*struct{ rxPct, txPct float64 }),
+		prevNet:        make(map[string]stats.NetStamp),
+		peakHistory:    make(map[string][]float64),
+		mouseX:         -1, // off-screen until first mouse move
+		mouseY:         -1,
+	}
+}
+
 // Run runs the SDL display loop until ctx is cancelled or user presses 'q'.
 func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
@@ -97,37 +128,6 @@ func Run(ctx context.Context, cfg *config.Config, src stats.Source) error {
 	}
 }
 
-// newRunState builds initial run state from config.
-func newRunState(cfg *config.Config, winW, winH int32) *runState {
-	return &runState{
-		showAvgLine:    cfg.ShowAvgLine,
-		showIOAvgLine:  cfg.ShowIOAvgLine,
-		cpuMode:        cfg.CPUMode,
-		showMem:        cfg.ShowMem,
-		showNet:        cfg.ShowNet,
-		showLoad:       cfg.ShowLoad,
-		// Use the fixed cap when set; otherwise start at the auto-scale floor of 2.0.
-		loadPeak:       func() float64 {
-			if cfg.LoadMax > 0 {
-				return cfg.LoadMax
-			}
-			return 2.0
-		}(),
-		showSeparators: cfg.ShowSeparators,
-		extended:       cfg.Extended,
-		winW:           winW,
-		winH:           winH,
-		prevCPU:        make(map[string]collector.CPULine),
-		smoothedCPU:    make(map[string]*[10]float64),
-		smoothedMem:    make(map[string]*struct{ ramUsed, swapUsed float64 }),
-		smoothedNet:    make(map[string]*struct{ rxPct, txPct float64 }),
-		prevNet:        make(map[string]stats.NetStamp),
-		peakHistory:    make(map[string][]float64),
-		mouseX:         -1, // off-screen until first mouse move
-		mouseY:         -1,
-	}
-}
-
 func clampInt(v, min, max int) int {
 	if v < min {
 		return min
@@ -164,10 +164,21 @@ func handleEvents(window *sdl.Window, cfg *config.Config, state *runState) bool 
 }
 
 // handleKey handles one key press; returns true to quit.
+// handleKey handles one key press; returns true to quit.
+// It delegates to focused helpers for toggle, adjust/save, and resize keys.
 func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *runState) bool {
-	switch sym {
-	case sdl.K_q:
+	if sym == sdl.K_q {
 		return true
+	}
+	handleToggleKeys(sym, cfg, state)
+	handleAdjustAndSave(sym, cfg, state)
+	handleResizeKeys(sym, window, cfg, state)
+	return false
+}
+
+// handleToggleKeys processes display-toggle hotkeys (1, 2/m, 3/n, 4/l, r, e, g, i, s).
+func handleToggleKeys(sym sdl.Keycode, cfg *config.Config, state *runState) {
+	switch sym {
 	case sdl.K_1:
 		// Cycle through three CPU display modes: average → all cores → off → average
 		state.cpuMode = (state.cpuMode + 1) % constants.CPUModeCount
@@ -209,6 +220,12 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 	case sdl.K_s:
 		state.showSeparators = !state.showSeparators
 		fmt.Println("==> Toggled host separators:", state.showSeparators)
+	}
+}
+
+// handleAdjustAndSave processes sampling-adjust and config-write hotkeys (a, y, d, c, f, v, h, w).
+func handleAdjustAndSave(sym sdl.Keycode, cfg *config.Config, state *runState) {
+	switch sym {
 	case sdl.K_a:
 		cfg.CPUAverage++
 		fmt.Println("==> CPU average samples:", cfg.CPUAverage)
@@ -232,6 +249,7 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 	case sdl.K_h:
 		printHotkeys()
 	case sdl.K_w:
+		// Copy mutable display state back to config before persisting.
 		cfg.ShowAvgLine = state.showAvgLine
 		cfg.ShowIOAvgLine = state.showIOAvgLine
 		cfg.CPUMode = state.cpuMode
@@ -245,6 +263,16 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 		} else {
 			fmt.Println("==> Config written to ~/.loadbarsrc")
 		}
+	}
+}
+
+// handleResizeKeys processes window-resize hotkeys (arrow keys).
+// window may be nil in tests; the guard prevents a nil-pointer panic.
+func handleResizeKeys(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *runState) {
+	if window == nil {
+		return
+	}
+	switch sym {
 	case sdl.K_LEFT:
 		state.winW -= 100
 		if state.winW < 1 {
@@ -267,7 +295,6 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 		state.winH += 100
 		window.SetSize(state.winW, state.winH)
 	}
-	return false
 }
 
 // barBounds calculates the x position and width for a bar at the given index.
@@ -657,16 +684,16 @@ func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[10]float64, barW int32, x, y
 		renderer.SetDrawColor(r, g, b, 255)
 		renderer.FillRect(&sdl.Rect{X: x, Y: int32(curY), W: barW, H: hh})
 	}
-	fill(constants.Blue.R, constants.Blue.G, constants.Blue.B, (*s)[0])             // system
-	fill(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, (*s)[1])       // user
-	fill(constants.Green.R, constants.Green.G, constants.Green.B, (*s)[2])          // nice
+	fill(constants.Blue.R, constants.Blue.G, constants.Blue.B, (*s)[0])                // system
+	fill(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, (*s)[1])          // user
+	fill(constants.Green.R, constants.Green.G, constants.Green.B, (*s)[2])             // nice
 	fill(constants.LimeGreen.R, constants.LimeGreen.G, constants.LimeGreen.B, (*s)[9]) // guestnice
-	fill(constants.Black.R, constants.Black.G, constants.Black.B, (*s)[3])          // idle
-	fill(constants.Purple.R, constants.Purple.G, constants.Purple.B, (*s)[4])       // iowait
-	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[5])          // irq
-	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[6])          // softirq
-	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[7])                // guest
-	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[8])                // steal
+	fill(constants.Black.R, constants.Black.G, constants.Black.B, (*s)[3])             // idle
+	fill(constants.Purple.R, constants.Purple.G, constants.Purple.B, (*s)[4])          // iowait
+	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[5])             // irq
+	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[6])             // softirq
+	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[7])                   // guest
+	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[8])                   // steal
 	// Extended: 1px peak line at max (system+user) over history
 	if extended && peakPct > 0 {
 		peakY := y + barH - int32(peakPct*pxPerPct)
@@ -828,6 +855,12 @@ func sumNonLoNet(h *stats.HostStats) (sum stats.NetStamp, hasIface bool) {
 // Smoothed values and prevNet are only updated when new collector data arrives
 // (cur.Stamp > prev.Stamp), so the bar holds steady between collector cycles
 // instead of decaying toward zero on frames with no new data.
+// drawNetBarSmoothed sums RX/TX across all non-lo interfaces, computes utilization
+// vs link speed, smooths toward target, and draws one net bar (RX left from top, TX right from bottom).
+// The bar occupies the region (x, y) with dimensions (barW, barH).
+// Smoothed values and prevNet are only updated when new collector data arrives
+// (cur.Stamp > prev.Stamp), so the bar holds steady between collector cycles
+// instead of decaying toward zero on frames with no new data.
 func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.Config, smoothed *struct{ rxPct, txPct float64 }, prev stats.NetStamp, factor float64, barW int32, x, y, barH int32) stats.NetStamp {
 	// Clear this slot so we never leave previous (e.g. CPU/mem) content visible
 	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
@@ -845,31 +878,43 @@ func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.
 	// target to 0 (no delta) and smooth the bar toward zero, making real
 	// traffic invisible.
 	if cur.Stamp > prev.Stamp && prev.Stamp > 0 {
-		linkBps := netLinkBytesPerSec(cfg)
-		if linkBps <= 0 {
-			linkBps = int64(constants.BytesGbit)
-		}
-		dt := cur.Stamp - prev.Stamp
-		if dt > 0 {
-			deltaB := cur.B - prev.B
-			deltaTb := cur.Tb - prev.Tb
-			if deltaB < 0 {
-				deltaB = 0
-			}
-			if deltaTb < 0 {
-				deltaTb = 0
-			}
-			targetRx := 100 * float64(deltaB) / (float64(linkBps) * dt)
-			targetTx := 100 * float64(deltaTb) / (float64(linkBps) * dt)
-			smoothed.rxPct += (targetRx - smoothed.rxPct) * factor
-			smoothed.txPct += (targetTx - smoothed.txPct) * factor
-		}
-		prev = cur // only advance prev when we consumed new data
+		prev = smoothNetUtilization(cur, prev, cfg, smoothed, factor)
 	} else if prev.Stamp == 0 {
 		// First sample: record it but don't draw yet (no delta available)
 		prev = cur
 	}
+	drawNetHalves(renderer, smoothed, x, y, barW, barH)
+	return prev
+}
 
+// smoothNetUtilization computes RX/TX utilization deltas and blends them into smoothed.
+// Returns the updated previous stamp (cur) so callers can advance the baseline.
+func smoothNetUtilization(cur, prev stats.NetStamp, cfg *config.Config, smoothed *struct{ rxPct, txPct float64 }, factor float64) stats.NetStamp {
+	linkBps := netLinkBytesPerSec(cfg)
+	if linkBps <= 0 {
+		linkBps = int64(constants.BytesGbit)
+	}
+	dt := cur.Stamp - prev.Stamp
+	if dt > 0 {
+		deltaB := cur.B - prev.B
+		deltaTb := cur.Tb - prev.Tb
+		if deltaB < 0 {
+			deltaB = 0
+		}
+		if deltaTb < 0 {
+			deltaTb = 0
+		}
+		targetRx := 100 * float64(deltaB) / (float64(linkBps) * dt)
+		targetTx := 100 * float64(deltaTb) / (float64(linkBps) * dt)
+		smoothed.rxPct += (targetRx - smoothed.rxPct) * factor
+		smoothed.txPct += (targetTx - smoothed.txPct) * factor
+	}
+	return cur // advance the baseline to the consumed sample
+}
+
+// drawNetHalves renders the RX (left half, from top) and TX (right half, from bottom)
+// filled rectangles for one network bar using pre-smoothed utilization percentages.
+func drawNetHalves(renderer *sdl.Renderer, smoothed *struct{ rxPct, txPct float64 }, x, y, barW, barH int32) {
 	halfW := barW / 2
 	pxPerPct := float64(barH) / 100.0
 	halfH := barH / 2
@@ -899,7 +944,6 @@ func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.
 		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
 		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: y, W: halfW, H: barH - txH})
 	}
-	return prev
 }
 
 // updateLoadPeak maintains the load scale used by the bar renderer.

@@ -38,6 +38,8 @@ func tooltipLines(bar *barDescriptor, snap map[string]*stats.HostStats, cfg *con
 		return netTooltipLines(bar, cfg, state)
 	case barLoad:
 		return loadTooltipLines(bar, h, cfg, state)
+	case barDisk:
+		return diskTooltipLines(bar, h, cfg, state)
 	}
 	return nil
 }
@@ -122,6 +124,40 @@ func loadTooltipLines(bar *barDescriptor, h *stats.HostStats, cfg *config.Config
 		fmt.Sprintf("5min:  %.2f", l5),
 		fmt.Sprintf("15min: %.2f", l15),
 		fmt.Sprintf(scaleLabel+"%.2f", state.loadPeak),
+	)
+	return lines
+}
+
+// diskTooltipLines returns tooltip text for a disk bar showing read/write throughput
+// and utilization %.
+func diskTooltipLines(bar *barDescriptor, h *stats.HostStats, cfg *config.Config, state *runState) []string {
+	label := bar.diskName
+	if label == "" {
+		label = "all"
+	}
+	lines := []string{fmt.Sprintf("%s [disk:%s]", bar.host, label)}
+	key := bar.host + ";disk;" + label
+	sm := state.smoothedDisk[key]
+	if sm == nil {
+		lines = append(lines, "No data yet")
+		return lines
+	}
+	// Compute MB/s from smoothed percentages and current peak
+	peak := state.diskPeak
+	if peak <= 0 {
+		peak = 1048576
+	}
+	readMBs := sm.readPct / 100 * peak / 1048576
+	writeMBs := sm.writePct / 100 * peak / 1048576
+
+	scaleLabel := "Peak: "
+	if cfg.DiskMax > 0 {
+		scaleLabel = "Max:  "
+	}
+	lines = append(lines,
+		fmt.Sprintf("Read:  %6.2f MB/s", readMBs),
+		fmt.Sprintf("Write: %6.2f MB/s", writeMBs),
+		fmt.Sprintf(scaleLabel+"%6.2f MB/s", peak/1048576),
 	)
 	return lines
 }

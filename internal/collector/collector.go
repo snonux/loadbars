@@ -18,6 +18,7 @@ type StatsStore interface {
 	SetCPU(host, name string, line CPULine)
 	SetMem(host, key string, value int64)
 	SetNet(host, iface string, net NetLine, stamp float64)
+	SetDisk(host, device string, disk DiskLine, stamp float64)
 }
 
 // Run starts a collector for one host: runs the embedded remote script (local or over SSH)
@@ -133,6 +134,10 @@ func dispatchCollectorLine(mode, line, hostKey string, store StatsStore) {
 			if err == nil {
 				store.SetNet(hostKey, net.Iface, net, float64(time.Now().UnixNano())/1e9)
 			}
+		}
+	case ModeDiskStats:
+		if d, err := ParseDiskLine(line); err == nil {
+			store.SetDisk(hostKey, d.Device, d, float64(time.Now().UnixNano())/1e9)
 		}
 	case ModeCPUStats:
 		if strings.HasPrefix(line, "cpu") {

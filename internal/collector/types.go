@@ -34,3 +34,13 @@ type NetLine struct {
 type LoadAvg struct {
 	Load1, Load5, Load15 string
 }
+
+// DiskLine is one device from /proc/diskstats with cumulative counters.
+type DiskLine struct {
+	Device       string
+	SectorsRead  int64 // cumulative sectors read (each sector = 512 bytes)
+	SectorsWrite int64 // cumulative sectors written
+	ReadTicks    int64 // cumulative ms spent reading
+	WriteTicks   int64 // cumulative ms spent writing
+	IoTicks      int64 // cumulative ms the device had I/O in progress
+}

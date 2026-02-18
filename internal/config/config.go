@@ -32,6 +32,9 @@ type Config struct {
 	ShowLoad       bool
 	LoadMax        float64 // 0 = auto-scale; >0 = fixed full-height reference value
 	ShowSeparators bool
+	DiskMode       int     // constants.DiskModeAggregate / DiskModeDevices / DiskModeOff
+	DiskMax        float64 // 0 = auto-scale; >0 = fixed bytes/sec reference
+	DiskAverage    int     // smoothing sample count (like CPUAverage/NetAverage)
 	MaxBarsPerRow  int
 	SSHOpts        string
 	Cluster        string
@@ -51,6 +54,9 @@ func Default() Config {
 		CPUMode:       constants.CPUModeAverage, // start with aggregate bar only
 		ShowMem:       false,
 		ShowNet:       false,
+		DiskMode:      constants.DiskModeOff,
+		DiskMax:       0,
+		DiskAverage:   10,
 		MaxBarsPerRow: 0,
 	}
 }
@@ -112,6 +118,7 @@ func (c *Config) parseReader(f *os.File) error {
 		"hasagent": true, "height": true, "maxwidth": true, "netaverage": true,
 		"netlink": true, "cpumode": true, "showcores": true, "showmem": true,
 		"showavgline": true, "showioavgline": true, "shownet": true, "showload": true, "loadmax": true, "showseparators": true,
+		"diskmode": true, "diskmax": true, "diskaverage": true,
 		"maxbarsperrow": true, "sshopts": true, "cluster": true,
 	}
 	scanner := bufio.NewScanner(f)
@@ -217,6 +224,20 @@ func (c *Config) setDisplayFlags(key, val string) {
 		}
 	case "showseparators":
 		c.ShowSeparators = parseBool(val)
+	case "diskmode":
+		// 0=aggregate, 1=devices, 2=off — clamp to valid range
+		if n, err := strconv.Atoi(val); err == nil && n >= 0 && n < constants.DiskModeCount {
+			c.DiskMode = n
+		}
+	case "diskmax":
+		// Accept any non-negative float; 0 means auto-scale.
+		if f, err := strconv.ParseFloat(val, 64); err == nil && f >= 0 {
+			c.DiskMax = f
+		}
+	case "diskaverage":
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			c.DiskAverage = n
+		}
 	}
 }
 
@@ -249,6 +270,9 @@ func (c *Config) writeTo(f *os.File) error {
 	writeBool("showload", c.ShowLoad)
 	writeFloat("loadmax", c.LoadMax)
 	writeBool("showseparators", c.ShowSeparators)
+	writeInt("diskmode", c.DiskMode)
+	writeFloat("diskmax", c.DiskMax)
+	writeInt("diskaverage", c.DiskAverage)
 	writeInt("maxbarsperrow", c.MaxBarsPerRow)
 	writeStr("sshopts", c.SSHOpts)
 	writeStr("cluster", c.Cluster)

@@ -397,7 +397,7 @@ func TestMultiHost_BarCount(t *testing.T) {
 	}
 
 	snap := src.Snapshot()
-	numBars := countBars(snap, constants.CPUModeAverage, true, true, false)
+	numBars := countBars(snap, constants.CPUModeAverage, true, true, false, constants.DiskModeOff)
 	if numBars != 6 {
 		t.Fatalf("expected 6 bars (2 hosts × 3), got %d", numBars)
 	}
@@ -430,19 +430,19 @@ func TestCores_Toggle(t *testing.T) {
 	snap := map[string]*stats.HostStats{"host1": hostStats}
 
 	// CPUModeAverage: aggregate bar only (1 bar)
-	nAverage := countBars(snap, constants.CPUModeAverage, false, false, false)
+	nAverage := countBars(snap, constants.CPUModeAverage, false, false, false, constants.DiskModeOff)
 	if nAverage != 1 {
 		t.Errorf("CPUModeAverage: expected 1 bar, got %d", nAverage)
 	}
 
 	// CPUModeCores: aggregate + individual cores = cpu + cpu0 + cpu1 (3 bars)
-	nCores := countBars(snap, constants.CPUModeCores, false, false, false)
+	nCores := countBars(snap, constants.CPUModeCores, false, false, false, constants.DiskModeOff)
 	if nCores != 3 {
 		t.Errorf("CPUModeCores: expected 3 bars, got %d", nCores)
 	}
 
 	// CPUModeOff: no CPU bars → countBars floors to 1 (window always shows something)
-	nOff := countBars(snap, constants.CPUModeOff, false, false, false)
+	nOff := countBars(snap, constants.CPUModeOff, false, false, false, constants.DiskModeOff)
 	if nOff != 1 {
 		t.Errorf("CPUModeOff: expected 1 (floor), got %d", nOff)
 	}
@@ -664,8 +664,8 @@ func TestHandleKey_Quit(t *testing.T) {
 func TestHandleKey_UnknownKey(t *testing.T) {
 	cfg := defaultTestConfig()
 	state := newRunState(cfg, 200, 100)
-	if handleKey(sdl.K_x, nil, cfg, state) {
-		t.Error("expected handleKey(x) to return false")
+	if handleKey(sdl.K_z, nil, cfg, state) {
+		t.Error("expected handleKey(z) to return false")
 	}
 	// State should be unchanged
 	if state.cpuMode != cfg.CPUMode || state.showMem != cfg.ShowMem || state.showNet != cfg.ShowNet {
@@ -700,7 +700,7 @@ func TestHandleKey_ToggleCores(t *testing.T) {
 	}
 
 	// State 2 (CPUModeOff): no CPU bars; countBars returns 1 (floor) so window is still drawn
-	nOff := countBars(src.Snapshot(), constants.CPUModeOff, false, false, false)
+	nOff := countBars(src.Snapshot(), constants.CPUModeOff, false, false, false, constants.DiskModeOff)
 	if nOff != 1 {
 		t.Errorf("CPUModeOff: expected countBars=1 (floor), got %d", nOff)
 	}
@@ -1605,5 +1605,217 @@ func TestHandleKey_WriteConfig_Separators(t *testing.T) {
 
 	if !cfg.ShowSeparators {
 		t.Error("expected ShowSeparators=true in config after 'w'")
+	}
+}
+
+// --- Disk display tests ---
+
+func TestIsWholeDisk(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{"sda", true},
+		{"sda1", false},
+		{"sda12", false},
+		{"nvme0n1", true},
+		{"nvme0n1p1", false},
+		{"nvme0n1p12", false},
+		{"vda", true},
+		{"vda1", false},
+		{"xvda", true},
+		{"xvda1", false},
+		{"hda", true},
+		{"hda1", false},
+		{"loop0", false},
+		{"loop1", false},
+		{"ram0", false},
+		{"dm-0", false},
+		{"dm-1", false},
+		{"sr0", true},   // CD-ROM, not a partition
+		{"mmcblk0", true}, // SD card, whole disk
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isWholeDisk(tt.name); got != tt.want {
+				t.Errorf("isWholeDisk(%q) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSortedDiskNames(t *testing.T) {
+	disk := map[string]stats.DiskStamp{
+		"sda":       {SectorsRead: 100},
+		"sda1":      {SectorsRead: 50},
+		"nvme0n1":   {SectorsRead: 200},
+		"nvme0n1p1": {SectorsRead: 100},
+		"loop0":     {SectorsRead: 0},
+	}
+
+	// Aggregate mode returns ["all"]
+	agg := sortedDiskNames(disk, constants.DiskModeAggregate)
+	if len(agg) != 1 || agg[0] != "all" {
+		t.Errorf("aggregate: got %v, want [all]", agg)
+	}
+
+	// Device mode returns sorted whole-disk names only
+	devs := sortedDiskNames(disk, constants.DiskModeDevices)
+	if len(devs) != 2 || devs[0] != "nvme0n1" || devs[1] != "sda" {
+		t.Errorf("devices: got %v, want [nvme0n1, sda]", devs)
+	}
+
+	// Off mode returns nil
+	off := sortedDiskNames(disk, constants.DiskModeOff)
+	if off != nil {
+		t.Errorf("off: got %v, want nil", off)
+	}
+}
+
+func TestSumAllDisks(t *testing.T) {
+	disk := map[string]stats.DiskStamp{
+		"sda":       {SectorsRead: 100, SectorsWrite: 200, IoTicks: 10, Stamp: 2.0},
+		"sda1":      {SectorsRead: 50, SectorsWrite: 100, IoTicks: 5, Stamp: 2.0},  // partition, skipped
+		"nvme0n1":   {SectorsRead: 300, SectorsWrite: 400, IoTicks: 20, Stamp: 3.0},
+		"loop0":     {SectorsRead: 10, SectorsWrite: 0, IoTicks: 1, Stamp: 1.0},     // loop, skipped
+	}
+	sum := sumAllDisks(disk)
+	if sum.SectorsRead != 400 || sum.SectorsWrite != 600 || sum.IoTicks != 30 {
+		t.Errorf("sumAllDisks: got sr=%d sw=%d io=%d, want sr=400 sw=600 io=30",
+			sum.SectorsRead, sum.SectorsWrite, sum.IoTicks)
+	}
+	if sum.Stamp != 3.0 {
+		t.Errorf("sumAllDisks: got stamp=%.1f, want 3.0", sum.Stamp)
+	}
+}
+
+func TestUpdateDiskPeak(t *testing.T) {
+	// Fixed override: diskPeak always equals DiskMax
+	state := &runState{
+		diskMode: constants.DiskModeAggregate,
+		diskPeak: 1048576,
+		prevDisk: make(map[string]stats.DiskStamp),
+	}
+	snap := map[string]*stats.HostStats{}
+	updateDiskPeak(snap, state, 5000000) // fixed 5 MB/s
+	if state.diskPeak != 5000000 {
+		t.Errorf("fixed: got diskPeak=%f, want 5000000", state.diskPeak)
+	}
+
+	// Auto-scale: decay toward floor
+	state.diskPeak = 2000000
+	updateDiskPeak(snap, state, 0)
+	if state.diskPeak >= 2000000 {
+		t.Errorf("auto-scale: diskPeak should have decayed below 2000000, got %f", state.diskPeak)
+	}
+	if state.diskPeak < 1048576 {
+		t.Errorf("auto-scale: diskPeak should not go below floor 1048576, got %f", state.diskPeak)
+	}
+
+	// Auto-scale at floor: stays at floor
+	state.diskPeak = 1048576
+	updateDiskPeak(snap, state, 0)
+	if state.diskPeak != 1048576 {
+		t.Errorf("auto-scale floor: got diskPeak=%f, want 1048576", state.diskPeak)
+	}
+}
+
+func TestHandleKey_ToggleDisk(t *testing.T) {
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	// Default is DiskModeOff
+	if state.diskMode != constants.DiskModeOff {
+		t.Fatalf("expected diskMode=DiskModeOff initially, got %d", state.diskMode)
+	}
+
+	// Press '5': DiskModeOff → DiskModeAggregate
+	handleKey(sdl.K_5, nil, cfg, state)
+	if state.diskMode != constants.DiskModeAggregate {
+		t.Fatalf("expected diskMode=DiskModeAggregate after first press, got %d", state.diskMode)
+	}
+
+	// Press '5': DiskModeAggregate → DiskModeDevices
+	handleKey(sdl.K_5, nil, cfg, state)
+	if state.diskMode != constants.DiskModeDevices {
+		t.Fatalf("expected diskMode=DiskModeDevices after second press, got %d", state.diskMode)
+	}
+
+	// Press '5': DiskModeDevices → DiskModeOff
+	handleKey(sdl.K_5, nil, cfg, state)
+	if state.diskMode != constants.DiskModeOff {
+		t.Fatalf("expected diskMode=DiskModeOff after third press, got %d", state.diskMode)
+	}
+}
+
+func TestHandleKey_DiskAverage(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.DiskAverage = 5
+	state := newRunState(cfg, 200, 100)
+
+	// 'b' increases disk average
+	handleKey(sdl.K_b, nil, cfg, state)
+	if cfg.DiskAverage != 6 {
+		t.Errorf("expected DiskAverage=6 after 'b', got %d", cfg.DiskAverage)
+	}
+
+	// 'x' decreases disk average
+	handleKey(sdl.K_x, nil, cfg, state)
+	if cfg.DiskAverage != 5 {
+		t.Errorf("expected DiskAverage=5 after 'x', got %d", cfg.DiskAverage)
+	}
+
+	// 'x' should clamp at 1
+	cfg.DiskAverage = 1
+	handleKey(sdl.K_x, nil, cfg, state)
+	if cfg.DiskAverage != 1 {
+		t.Errorf("expected DiskAverage=1 (clamped), got %d", cfg.DiskAverage)
+	}
+}
+
+func TestHandleKey_WriteConfig_Disk(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	state.diskMode = constants.DiskModeAggregate
+
+	handleKey(sdl.K_w, nil, cfg, state)
+
+	if cfg.DiskMode != constants.DiskModeAggregate {
+		t.Errorf("expected DiskMode=DiskModeAggregate in config after 'w', got %d", cfg.DiskMode)
+	}
+}
+
+func TestCountBars_WithDisk(t *testing.T) {
+	snap := map[string]*stats.HostStats{
+		"host1": {
+			CPU: map[string]collector.CPULine{"cpu": {}},
+			Disk: map[string]stats.DiskStamp{
+				"sda":     {SectorsRead: 100},
+				"sda1":    {SectorsRead: 50},
+				"nvme0n1": {SectorsRead: 200},
+			},
+		},
+	}
+
+	// DiskModeOff: 1 CPU bar only
+	n := countBars(snap, constants.CPUModeAverage, false, false, false, constants.DiskModeOff)
+	if n != 1 {
+		t.Errorf("DiskModeOff: expected 1, got %d", n)
+	}
+
+	// DiskModeAggregate: 1 CPU + 1 disk = 2
+	n = countBars(snap, constants.CPUModeAverage, false, false, false, constants.DiskModeAggregate)
+	if n != 2 {
+		t.Errorf("DiskModeAggregate: expected 2, got %d", n)
+	}
+
+	// DiskModeDevices: 1 CPU + 2 whole-disk devices (sda, nvme0n1) = 3
+	n = countBars(snap, constants.CPUModeAverage, false, false, false, constants.DiskModeDevices)
+	if n != 3 {
+		t.Errorf("DiskModeDevices: expected 3, got %d", n)
 	}
 }

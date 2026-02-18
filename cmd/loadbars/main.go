@@ -35,6 +35,8 @@ func main() {
 	flag.StringVar(&cfg.SSHOpts, "sshopts", cfg.SSHOpts, "Set SSH options")
 	flag.BoolVar(&cfg.HasAgent, "hasagent", cfg.HasAgent, "SSH key already known by agent")
 	flag.IntVar(&cfg.MaxBarsPerRow, "maxbarsperrow", cfg.MaxBarsPerRow, "Max bars per row (0=unlimited)")
+	flag.IntVar(&cfg.DiskMode, "diskmode", cfg.DiskMode, "Disk display mode (0=aggregate, 1=devices, 2=off)")
+	diskmax := flag.Float64("diskmax", 0, "Fixed disk bar full-height reference in bytes/sec (0 = auto-scale)")
 	loadmax := flag.Float64("loadmax", 0, "Fixed load bar full-height reference value (0 = auto-scale)")
 
 	flag.Parse()
@@ -53,6 +55,9 @@ func main() {
 	// --loadmax overrides the rc file value when explicitly set to a positive number.
 	if *loadmax > 0 {
 		cfg.LoadMax = *loadmax
+	}
+	if *diskmax > 0 {
+		cfg.DiskMax = *diskmax
 	}
 	if *cluster != "" {
 		cfg.Cluster = *cluster

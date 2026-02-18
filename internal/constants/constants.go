@@ -24,6 +24,14 @@ const (
 	CPUModeCount   = 3 // Total number of CPU modes for cycling
 )
 
+// DiskMode controls which disk I/O bars are displayed (cycles with the 5 key).
+const (
+	DiskModeAggregate = 0 // Show one bar per host summing all whole-disk devices
+	DiskModeDevices   = 1 // Show one bar per whole-disk device per host
+	DiskModeOff       = 2 // Hide disk bars entirely (default)
+	DiskModeCount     = 3 // Total number of disk modes for cycling
+)
+
 // Exit codes
 const (
 	Success  = 0
@@ -58,6 +66,9 @@ var (
 	Yellow0    = RGB{0xff, 0xa0, 0x00}
 	Yellow     = RGB{0xff, 0xc0, 0x00}
 	Teal       = RGB{0x00, 0xcc, 0xcc} // Load average bar fill
+	DiskRead   = RGB{0x90, 0x00, 0xd0} // Purple for disk read throughput
+	DiskWrite  = RGB{0x60, 0x00, 0x90} // Darker purple for disk write throughput
+	DiskUtil   = RGB{0xff, 0x60, 0x60} // Light red for disk utilization % overlay
 )
 
 // BytesPerSec for link speed reference (bytes per second at given mbit)

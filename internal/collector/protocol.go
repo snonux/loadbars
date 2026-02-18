@@ -5,5 +5,6 @@ const (
 	ModeLoadAvg  = "M LOADAVG"
 	ModeMemStats = "M MEMSTATS"
 	ModeNetStats = "M NETSTATS"
-	ModeCPUStats = "M CPUSTATS"
+	ModeDiskStats = "M DISKSTATS"
+	ModeCPUStats  = "M CPUSTATS"
 )

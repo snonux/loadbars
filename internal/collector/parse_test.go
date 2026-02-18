@@ -115,3 +115,46 @@ func TestParseLoadAvg(t *testing.T) {
 		t.Errorf("ParseLoadAvg(1.0) = %+v", got2)
 	}
 }
+
+func TestParseDiskLine(t *testing.T) {
+	tests := []struct {
+		name         string
+		line         string
+		wantDevice   string
+		wantSR       int64
+		wantSW       int64
+		wantRT       int64
+		wantWT       int64
+		wantIO       int64
+		wantErr      bool
+	}{
+		{"full", "sda:rs=1000;ws=2000;rt=50;wt=100;io=120", "sda", 1000, 2000, 50, 100, 120, false},
+		{"nvme", "nvme0n1:rs=500;ws=300;rt=10;wt=20;io=30", "nvme0n1", 500, 300, 10, 20, 30, false},
+		{"zeros", "vda:rs=0;ws=0;rt=0;wt=0;io=0", "vda", 0, 0, 0, 0, 0, false},
+		{"large_counters", "sda:rs=9999999999;ws=8888888888;rt=100;wt=200;io=300", "sda", 9999999999, 8888888888, 100, 200, 300, false},
+		{"partial_fields", "sda:rs=100;ws=200", "sda", 100, 200, 0, 0, 0, false},
+		{"no_colon", "sda rs=100", "", 0, 0, 0, 0, 0, true},
+		{"empty", "", "", 0, 0, 0, 0, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseDiskLine(tt.line)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseDiskLine() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				return
+			}
+			if got.Device != tt.wantDevice {
+				t.Errorf("Device = %q, want %q", got.Device, tt.wantDevice)
+			}
+			if got.SectorsRead != tt.wantSR || got.SectorsWrite != tt.wantSW {
+				t.Errorf("Sectors = read:%d write:%d, want read:%d write:%d", got.SectorsRead, got.SectorsWrite, tt.wantSR, tt.wantSW)
+			}
+			if got.ReadTicks != tt.wantRT || got.WriteTicks != tt.wantWT || got.IoTicks != tt.wantIO {
+				t.Errorf("Ticks = rt:%d wt:%d io:%d, want rt:%d wt:%d io:%d", got.ReadTicks, got.WriteTicks, got.IoTicks, tt.wantRT, tt.wantWT, tt.wantIO)
+			}
+		})
+	}
+}

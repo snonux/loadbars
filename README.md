@@ -81,6 +81,8 @@ All options can also be set in `~/.loadbarsrc` (key=value, no leading `--`). CLI
 | `--hasagent` | SSH key is already loaded in agent (skip extra agent checks) | off |
 | `--showload` | Show load average bars (1-min teal fill, 5-min yellow line, 15-min white line per host) | off |
 | `--loadmax <n>` | Fix the load bar full-height reference to `n` (e.g. `8` = core count); 0 = auto-scale | 0 |
+| `--diskmode <n>` | Disk I/O display mode: 0=aggregate, 1=per-device, 2=off | 2 (off) |
+| `--diskmax <n>` | Fix the disk bar full-height reference to `n` bytes/sec; 0 = auto-scale | 0 |
 | `--maxbarsperrow <n>` | Max bars per row; 0 = unlimited (single row) | 0 |
 | `--help` | Show usage and exit | — |
 | `--version` | Print version and exit | — |
@@ -140,6 +142,7 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 | **2** / **m** | Toggle memory bars (RAM left, Swap right per host) |
 | **3** / **n** | Toggle network bars (RX/TX summed across all non-lo interfaces per host) |
 | **4** / **l** | Toggle load average bars (1-min teal fill, 5-min yellow line, 15-min white line) |
+| **5** | Toggle disk I/O bars: aggregate (all devices) → per-device → off → aggregate |
 | **r** | Reset load auto-scale peak to floor (2.0) — has no effect when `loadmax` is fixed |
 | **e** | Toggle extended display (1px peak line on CPU bars: max system+user over last samples) |
 | **g** | Toggle global average CPU line (1px red line showing mean CPU usage across all hosts) |
@@ -152,6 +155,8 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 | **y** | Decrease CPU average samples (min 1) |
 | **d** | Increase net average samples |
 | **c** | Decrease net average samples (min 1) |
+| **b** | Increase disk average samples |
+| **x** | Decrease disk average samples (min 1) |
 | **f** | Link scale up (net utilization reference) |
 | **v** | Link scale down (net utilization reference) |
 | **Arrow keys** | Resize window (left/right: width, up/down: height) |
@@ -191,6 +196,16 @@ When network bar is red: No non-loopback interface exists on the specific remote
 - **Scale reference** (shown in hover tooltip):
   - *Auto-scale* (`loadmax=0`, default): the reference tracks the global maximum 1-min load across all hosts, decaying slowly over time (floor 2.0). Press **r** to reset it back to 2.0 immediately.
   - *Fixed scale* (`loadmax=N`): the bar's full height always equals `N`. Useful when you know the core count and want a stable reference across sessions. Tooltip shows `Max:` instead of `Peak:`.
+
+### Disk I/O stuff
+
+- **Purple fill** from top downward: read throughput as % of the peak/max reference.
+- **Darker purple fill** from bottom upward: write throughput as % of the peak/max reference.
+- In **extended mode** (`e` key), a 3px light-red line shows disk utilization % (fraction of time the device had I/O in progress).
+- **Aggregate mode** (`5` key, first press): one bar per host summing all whole-disk devices. Partitions (`sda1`, `nvme0n1p1`), loop, ram, and device-mapper devices are excluded.
+- **Per-device mode** (`5` key, second press): one bar per whole-disk device per host.
+- **Scale reference**: auto-scales based on observed peak throughput (floor 1 MB/s), or fixed via `diskmax=N` (bytes/sec).
+- **Config keys**: `diskmode` (0/1/2), `diskmax` (bytes/sec), `diskaverage` (smoothing samples).
 
 **Aggregated interfaces:** Loadbars sums RX/TX across all non-loopback interfaces (e.g. `eth0`, `wlan0`, `enp0s3`) and shows the combined total. Loopback (`lo`) is always excluded.
 

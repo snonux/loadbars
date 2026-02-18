@@ -11,12 +11,21 @@ type NetStamp struct {
 	Stamp float64
 }
 
+// DiskStamp holds disk I/O stats and timestamp for delta calculation.
+type DiskStamp struct {
+	SectorsRead  int64
+	SectorsWrite int64
+	IoTicks      int64
+	Stamp        float64
+}
+
 // HostStats holds the latest stats for one host (read-only snapshot).
 type HostStats struct {
 	LoadAvg1, LoadAvg5, LoadAvg15 string
 	Mem                           map[string]int64
 	Net                           map[string]NetStamp
 	CPU                           map[string]collector.CPULine
+	Disk                          map[string]DiskStamp
 }
 
 // Source is the interface the display uses to read current stats.

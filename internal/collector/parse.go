@@ -100,3 +100,33 @@ func ParseLoadAvg(line string) LoadAvg {
 	}
 	return l
 }
+
+// ParseDiskLine parses "device:rs=N;ws=N;rt=N;wt=N;io=N" from the M DISKSTATS section.
+func ParseDiskLine(line string) (DiskLine, error) {
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) != 2 {
+		return DiskLine{}, fmt.Errorf("disk line missing colon: %q", line)
+	}
+	d := DiskLine{Device: strings.TrimSpace(parts[0])}
+	for _, pair := range strings.Split(parts[1], ";") {
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		k := strings.TrimSpace(kv[0])
+		v, _ := strconv.ParseInt(strings.TrimSpace(kv[1]), 10, 64)
+		switch k {
+		case "rs":
+			d.SectorsRead = v
+		case "ws":
+			d.SectorsWrite = v
+		case "rt":
+			d.ReadTicks = v
+		case "wt":
+			d.WriteTicks = v
+		case "io":
+			d.IoTicks = v
+		}
+	}
+	return d, nil
+}

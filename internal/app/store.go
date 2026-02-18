@@ -19,6 +19,7 @@ type hostData struct {
 	mem                  map[string]int64
 	net                  map[string]stats.NetStamp
 	cpu                  map[string]collector.CPULine
+	disk                 map[string]stats.DiskStamp
 }
 
 // Compile-time interface satisfaction checks.
@@ -62,6 +63,19 @@ func (s *Store) SetNet(host, iface string, net collector.NetLine, stamp float64)
 	d.net[iface] = stats.NetStamp{B: net.B, Tb: net.Tb, Stamp: stamp}
 }
 
+// SetDisk sets the disk stamp for the given host and device.
+func (s *Store) SetDisk(host, device string, disk collector.DiskLine, stamp float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d := s.getOrCreate(host)
+	d.disk[device] = stats.DiskStamp{
+		SectorsRead:  disk.SectorsRead,
+		SectorsWrite: disk.SectorsWrite,
+		IoTicks:      disk.IoTicks,
+		Stamp:        stamp,
+	}
+}
+
 // Snapshot returns a copy of current stats for all hosts for the display.
 func (s *Store) Snapshot() map[string]*stats.HostStats {
 	s.mu.RLock()
@@ -80,6 +94,10 @@ func (s *Store) Snapshot() map[string]*stats.HostStats {
 		for k, v := range d.cpu {
 			cpu[k] = v
 		}
+		disk := make(map[string]stats.DiskStamp, len(d.disk))
+		for k, v := range d.disk {
+			disk[k] = v
+		}
 		out[h] = &stats.HostStats{
 			LoadAvg1:  d.load1,
 			LoadAvg5:  d.load5,
@@ -87,6 +105,7 @@ func (s *Store) Snapshot() map[string]*stats.HostStats {
 			Mem:       mem,
 			Net:       net,
 			CPU:       cpu,
+			Disk:      disk,
 		}
 	}
 	return out
@@ -95,9 +114,10 @@ func (s *Store) Snapshot() map[string]*stats.HostStats {
 func (s *Store) getOrCreate(host string) *hostData {
 	if s.hosts[host] == nil {
 		s.hosts[host] = &hostData{
-			mem: make(map[string]int64),
-			net: make(map[string]stats.NetStamp),
-			cpu: make(map[string]collector.CPULine),
+			mem:  make(map[string]int64),
+			net:  make(map[string]stats.NetStamp),
+			cpu:  make(map[string]collector.CPULine),
+			disk: make(map[string]stats.DiskStamp),
 		}
 	}
 	return s.hosts[host]

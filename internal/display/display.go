@@ -44,6 +44,10 @@ type runState struct {
 	smoothedNet    map[string]*struct{ rxPct, txPct float64 }
 	prevNet        map[string]stats.NetStamp // aggregated (summed) previous net stamp per host
 	peakHistory    map[string][]float64
+	diskMode       int       // constants.DiskModeAggregate / DiskModeDevices / DiskModeOff
+	diskPeak       float64   // auto-scale peak (bytes/sec) for disk bars
+	prevDisk       map[string]stats.DiskStamp  // previous disk stamp per host+device key
+	smoothedDisk   map[string]*struct{ readPct, writePct float64 }
 	mouseX         int32     // last known mouse X position (for tooltip hit testing)
 	mouseY         int32     // last known mouse Y position (for tooltip hit testing)
 	mouseLastMove  time.Time // timestamp of last mouse movement; tooltip hidden after 3s idle
@@ -56,6 +60,10 @@ func newRunState(cfg *config.Config, winW, winH int32) *runState {
 	initLoadPeak := 2.0
 	if cfg.LoadMax > 0 {
 		initLoadPeak = cfg.LoadMax
+	}
+	initDiskPeak := 1048576.0 // 1 MB/s floor for auto-scale
+	if cfg.DiskMax > 0 {
+		initDiskPeak = cfg.DiskMax
 	}
 	return &runState{
 		showAvgLine:    cfg.ShowAvgLine,
@@ -75,6 +83,10 @@ func newRunState(cfg *config.Config, winW, winH int32) *runState {
 		smoothedNet:    make(map[string]*struct{ rxPct, txPct float64 }),
 		prevNet:        make(map[string]stats.NetStamp),
 		peakHistory:    make(map[string][]float64),
+		diskMode:       cfg.DiskMode,
+		diskPeak:       initDiskPeak,
+		prevDisk:       make(map[string]stats.DiskStamp),
+		smoothedDisk:   make(map[string]*struct{ readPct, writePct float64 }),
 		mouseX:         -1, // off-screen until first mouse move
 		mouseY:         -1,
 	}
@@ -199,6 +211,17 @@ func handleToggleKeys(sym sdl.Keycode, cfg *config.Config, state *runState) {
 	case sdl.K_4, sdl.K_l:
 		state.showLoad = !state.showLoad
 		fmt.Println("==> Toggled show load:", state.showLoad)
+	case sdl.K_5:
+		// Cycle through three disk display modes: aggregate → devices → off → aggregate
+		state.diskMode = (state.diskMode + 1) % constants.DiskModeCount
+		switch state.diskMode {
+		case constants.DiskModeAggregate:
+			fmt.Println("==> Disk: aggregate (all devices)")
+		case constants.DiskModeDevices:
+			fmt.Println("==> Disk: per-device")
+		case constants.DiskModeOff:
+			fmt.Println("==> Disk: off")
+		}
 	case sdl.K_r:
 		// Reset load auto-scale peak to the floor so the bar rescales immediately.
 		// Has no effect when loadmax is fixed (cfg.LoadMax > 0).
@@ -242,6 +265,14 @@ func handleAdjustAndSave(sym sdl.Keycode, cfg *config.Config, state *runState) {
 			cfg.NetAverage--
 		}
 		fmt.Println("==> Net average samples:", cfg.NetAverage)
+	case sdl.K_b:
+		cfg.DiskAverage++
+		fmt.Println("==> Disk average samples:", cfg.DiskAverage)
+	case sdl.K_x:
+		if cfg.DiskAverage > 1 {
+			cfg.DiskAverage--
+		}
+		fmt.Println("==> Disk average samples:", cfg.DiskAverage)
 	case sdl.K_f:
 		scaleLinkUp(cfg)
 	case sdl.K_v:
@@ -257,6 +288,7 @@ func handleAdjustAndSave(sym sdl.Keycode, cfg *config.Config, state *runState) {
 		cfg.ShowNet = state.showNet
 		cfg.ShowLoad = state.showLoad
 		cfg.ShowSeparators = state.showSeparators
+		cfg.DiskMode = state.diskMode
 		cfg.Extended = state.extended
 		if err := cfg.Write(); err != nil {
 			fmt.Fprintf(os.Stderr, "!!! Write config: %v\n", err)
@@ -338,7 +370,7 @@ func barRect(winW, winH int32, numBars, maxPerRow, barIndex int) (x, y, w, h int
 // When showAvgLine/showIOAvgLine are enabled, global average lines are drawn on top.
 func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, state *runState) {
 	snap := src.Snapshot()
-	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet, state.showLoad)
+	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet, state.showLoad, state.diskMode)
 	// Always clear the entire window before drawing. SDL2 uses double-buffering,
 	// so skipping clear leaves stale content in the back buffer.
 	renderer.SetDrawColor(0, 0, 0, 255)
@@ -346,6 +378,10 @@ func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, sta
 	if state.showLoad {
 		// Update the global load peak before drawing so bar scale is current.
 		updateLoadPeak(snap, state, cfg.LoadMax)
+	}
+	if state.diskMode != constants.DiskModeOff {
+		// Update the global disk peak before drawing so bar scale is current.
+		updateDiskPeak(snap, state, cfg.DiskMax)
 	}
 	drawBars(renderer, snap, cfg, state, numBars)
 	if state.showAvgLine {
@@ -358,7 +394,7 @@ func drawFrame(renderer *sdl.Renderer, src stats.Source, cfg *config.Config, sta
 	drawOverlay(renderer, snap, cfg, state)
 }
 
-func countBars(snap map[string]*stats.HostStats, cpuMode int, showMem, showNet, showLoad bool) int {
+func countBars(snap map[string]*stats.HostStats, cpuMode int, showMem, showNet, showLoad bool, diskMode int) int {
 	n := 0
 	for _, host := range sortedHosts(snap) {
 		if h := snap[host]; h != nil {
@@ -372,6 +408,7 @@ func countBars(snap map[string]*stats.HostStats, cpuMode int, showMem, showNet, 
 			if showLoad {
 				n++
 			}
+			n += len(sortedDiskNames(h.Disk, diskMode))
 		}
 	}
 	if n == 0 {
@@ -552,6 +589,23 @@ func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *
 		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
 		*barIndex++
 		drawLoadAvgBar(renderer, h, state.loadPeak, barW, x, y, barH)
+	}
+	// Disk I/O bars: aggregate (one bar) or per-device based on diskMode
+	diskNames := sortedDiskNames(h.Disk, state.diskMode)
+	for _, dname := range diskNames {
+		key := host + ";disk;" + dname
+		var cur stats.DiskStamp
+		if dname == "all" {
+			cur = sumAllDisks(h.Disk)
+		} else {
+			cur = h.Disk[dname]
+		}
+		if state.smoothedDisk[key] == nil {
+			state.smoothedDisk[key] = &struct{ readPct, writePct float64 }{}
+		}
+		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
+		*barIndex++
+		state.prevDisk[key] = drawDiskBarSmoothed(renderer, cur, state, state.smoothedDisk[key], state.prevDisk[key], smoothFactor, barW, x, y, barH, state.extended)
 	}
 }
 
@@ -772,7 +826,7 @@ func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *st
 }
 
 func printHotkeys() {
-	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net 4/l=load r=reset load peak e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg f/v=link scale arrows=resize")
+	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net 4/l=load 5=disk r=reset load peak e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg b/x=disk avg f/v=link scale arrows=resize")
 }
 
 // scaleLinkUp moves cfg.NetLink to the next higher link speed in linkScales.

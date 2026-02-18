@@ -14,20 +14,22 @@ const (
 	barMem
 	barNet
 	barLoad
+	barDisk
 )
 
 // barDescriptor describes a single bar's position, host, and type.
 type barDescriptor struct {
-	host    string  // hostname this bar belongs to
-	kind    barKind // CPU, mem, or net
-	cpuName string  // CPU name (e.g. "cpu", "cpu0"); only set for barCPU
-	rect    sdl.Rect
+	host     string  // hostname this bar belongs to
+	kind     barKind // CPU, mem, net, load, or disk
+	cpuName  string  // CPU name (e.g. "cpu", "cpu0"); only set for barCPU
+	diskName string  // disk device name (e.g. "sda", "all"); only set for barDisk
+	rect     sdl.Rect
 }
 
 // buildBarMap replays the same host/bar iteration as drawBars to produce
 // a slice of bar descriptors with their screen rectangles.
 func buildBarMap(snap map[string]*stats.HostStats, cfg *config.Config, state *runState) []barDescriptor {
-	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet, state.showLoad)
+	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet, state.showLoad, state.diskMode)
 	maxPerRow := cfg.MaxBarsPerRow
 	hosts := sortedHosts(snap)
 
@@ -73,6 +75,17 @@ func buildBarMap(snap map[string]*stats.HostStats, cfg *config.Config, state *ru
 				host: host,
 				kind: barLoad,
 				rect: sdl.Rect{X: x, Y: y, W: w, H: bh},
+			})
+			barIndex++
+		}
+		diskNames := sortedDiskNames(h.Disk, state.diskMode)
+		for _, dname := range diskNames {
+			x, y, w, bh := barRect(state.winW, state.winH, numBars, maxPerRow, barIndex)
+			bars = append(bars, barDescriptor{
+				host:     host,
+				kind:     barDisk,
+				diskName: dname,
+				rect:     sdl.Rect{X: x, Y: y, W: w, H: bh},
 			})
 			barIndex++
 		}

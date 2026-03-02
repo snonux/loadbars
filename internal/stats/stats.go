@@ -1,9 +1,5 @@
 package stats
 
-import (
-	"codeberg.org/snonux/loadbars/internal/collector"
-)
-
 // NetStamp holds network stats and timestamp for delta calculation.
 type NetStamp struct {
 	B     int64
@@ -24,7 +20,7 @@ type HostStats struct {
 	LoadAvg1, LoadAvg5, LoadAvg15 string
 	Mem                           map[string]int64
 	Net                           map[string]NetStamp
-	CPU                           map[string]collector.CPULine
+	CPU                           map[string]CPULine
 	Disk                          map[string]DiskStamp
 }
 

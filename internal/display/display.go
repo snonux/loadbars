@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/loadbars/internal/collector"
 	"codeberg.org/snonux/loadbars/internal/config"
 	"codeberg.org/snonux/loadbars/internal/constants"
 	"codeberg.org/snonux/loadbars/internal/stats"
@@ -25,32 +24,48 @@ const smoothFactor = 0.12
 // used by the f/v hotkeys to cycle through link scale values.
 var linkScales = []string{"mbit", "10mbit", "100mbit", "gbit", "10gbit"}
 
-// runState holds mutable state across the display loop (hotkeys, window size, smoothed data).
-type runState struct {
+type displayFlags struct {
 	showAvgLine    bool
 	showIOAvgLine  bool
 	cpuMode        int // constants.CPUModeAverage / CPUModeCores / CPUModeOff
 	showMem        bool
 	showNet        bool
 	showLoad       bool
-	loadPeak       float64 // global max load1 across all hosts (for bar scaling)
 	showSeparators bool
 	extended       bool
-	winW           int32
-	winH           int32
-	prevCPU        map[string]collector.CPULine
-	smoothedCPU    map[string]*[10]float64
-	smoothedMem    map[string]*struct{ ramUsed, swapUsed float64 }
-	smoothedNet    map[string]*struct{ rxPct, txPct float64 }
-	prevNet        map[string]stats.NetStamp // aggregated (summed) previous net stamp per host
-	peakHistory    map[string][]float64
-	diskMode       int       // constants.DiskModeAggregate / DiskModeDevices / DiskModeOff
-	diskPeak       float64   // auto-scale peak (bytes/sec) for disk bars
-	prevDisk       map[string]stats.DiskStamp  // previous disk stamp per host+device key
-	smoothedDisk   map[string]*struct{ readPct, writePct float64 }
-	mouseX         int32     // last known mouse X position (for tooltip hit testing)
-	mouseY         int32     // last known mouse Y position (for tooltip hit testing)
-	mouseLastMove  time.Time // timestamp of last mouse movement; tooltip hidden after 3s idle
+	diskMode       int // constants.DiskModeAggregate / DiskModeDevices / DiskModeOff
+}
+
+type smoothState struct {
+	prevCPU      map[string]stats.CPULine
+	smoothedCPU  map[string]*[10]float64
+	smoothedMem  map[string]*struct{ ramUsed, swapUsed float64 }
+	smoothedNet  map[string]*struct{ rxPct, txPct float64 }
+	prevNet      map[string]stats.NetStamp // aggregated (summed) previous net stamp per host
+	peakHistory  map[string][]float64
+	prevDisk     map[string]stats.DiskStamp
+	smoothedDisk map[string]*struct{ readPct, writePct float64 }
+}
+
+type peakState struct {
+	loadPeak float64 // global max load1 across all hosts (for bar scaling)
+	diskPeak float64 // auto-scale peak (bytes/sec) for disk bars
+}
+
+type mouseState struct {
+	mouseX        int32     // last known mouse X position (for tooltip hit testing)
+	mouseY        int32     // last known mouse Y position (for tooltip hit testing)
+	mouseLastMove time.Time // timestamp of last mouse movement; tooltip hidden after 3s idle
+}
+
+// runState holds mutable state across the display loop (hotkeys, window size, smoothed data).
+type runState struct {
+	displayFlags
+	smoothState
+	peakState
+	mouseState
+	winW int32
+	winH int32
 }
 
 // newRunState builds initial run state from config.
@@ -66,29 +81,37 @@ func newRunState(cfg *config.Config, winW, winH int32) *runState {
 		initDiskPeak = cfg.DiskMax
 	}
 	return &runState{
-		showAvgLine:    cfg.ShowAvgLine,
-		showIOAvgLine:  cfg.ShowIOAvgLine,
-		cpuMode:        cfg.CPUMode,
-		showMem:        cfg.ShowMem,
-		showNet:        cfg.ShowNet,
-		showLoad:       cfg.ShowLoad,
-		loadPeak:       initLoadPeak,
-		showSeparators: cfg.ShowSeparators,
-		extended:       cfg.Extended,
-		winW:           winW,
-		winH:           winH,
-		prevCPU:        make(map[string]collector.CPULine),
-		smoothedCPU:    make(map[string]*[10]float64),
-		smoothedMem:    make(map[string]*struct{ ramUsed, swapUsed float64 }),
-		smoothedNet:    make(map[string]*struct{ rxPct, txPct float64 }),
-		prevNet:        make(map[string]stats.NetStamp),
-		peakHistory:    make(map[string][]float64),
-		diskMode:       cfg.DiskMode,
-		diskPeak:       initDiskPeak,
-		prevDisk:       make(map[string]stats.DiskStamp),
-		smoothedDisk:   make(map[string]*struct{ readPct, writePct float64 }),
-		mouseX:         -1, // off-screen until first mouse move
-		mouseY:         -1,
+		displayFlags: displayFlags{
+			showAvgLine:    cfg.ShowAvgLine,
+			showIOAvgLine:  cfg.ShowIOAvgLine,
+			cpuMode:        cfg.CPUMode,
+			showMem:        cfg.ShowMem,
+			showNet:        cfg.ShowNet,
+			showLoad:       cfg.ShowLoad,
+			showSeparators: cfg.ShowSeparators,
+			extended:       cfg.Extended,
+			diskMode:       cfg.DiskMode,
+		},
+		smoothState: smoothState{
+			prevCPU:      make(map[string]stats.CPULine),
+			smoothedCPU:  make(map[string]*[10]float64),
+			smoothedMem:  make(map[string]*struct{ ramUsed, swapUsed float64 }),
+			smoothedNet:  make(map[string]*struct{ rxPct, txPct float64 }),
+			prevNet:      make(map[string]stats.NetStamp),
+			peakHistory:  make(map[string][]float64),
+			prevDisk:     make(map[string]stats.DiskStamp),
+			smoothedDisk: make(map[string]*struct{ readPct, writePct float64 }),
+		},
+		peakState: peakState{
+			loadPeak: initLoadPeak,
+			diskPeak: initDiskPeak,
+		},
+		mouseState: mouseState{
+			mouseX: -1, // off-screen until first mouse move
+			mouseY: -1,
+		},
+		winW: winW,
+		winH: winH,
 	}
 }
 
@@ -192,53 +215,17 @@ func handleKey(sym sdl.Keycode, window *sdl.Window, cfg *config.Config, state *r
 func handleToggleKeys(sym sdl.Keycode, cfg *config.Config, state *runState) {
 	switch sym {
 	case sdl.K_1:
-		// Cycle through three CPU display modes: average → all cores → off → average
-		state.cpuMode = (state.cpuMode + 1) % constants.CPUModeCount
-		switch state.cpuMode {
-		case constants.CPUModeAverage:
-			fmt.Println("==> CPU: average bar only")
-		case constants.CPUModeCores:
-			fmt.Println("==> CPU: individual cores")
-		case constants.CPUModeOff:
-			fmt.Println("==> CPU: off")
-		}
+		cycleCPUMode(state)
 	case sdl.K_2, sdl.K_m:
-		state.showMem = !state.showMem
-		fmt.Println("==> Toggled show mem:", state.showMem)
+		toggleMem(state)
 	case sdl.K_3, sdl.K_n:
-		state.showNet = !state.showNet
-		fmt.Println("==> Toggled show net:", state.showNet)
+		toggleNet(state)
 	case sdl.K_4, sdl.K_l:
-		state.showLoad = !state.showLoad
-		fmt.Println("==> Toggled show load:", state.showLoad)
+		toggleLoad(state)
 	case sdl.K_5:
-		// Cycle through three disk display modes: aggregate → devices → off → aggregate
-		state.diskMode = (state.diskMode + 1) % constants.DiskModeCount
-		switch state.diskMode {
-		case constants.DiskModeAggregate:
-			fmt.Println("==> Disk: aggregate (all devices)")
-		case constants.DiskModeDevices:
-			fmt.Println("==> Disk: per-device")
-		case constants.DiskModeOff:
-			fmt.Println("==> Disk: off")
-		}
+		cycleDiskMode(state)
 	case sdl.K_r:
-		// Reset load auto-scale peak to the floor so the bar rescales immediately.
-		// Has no effect when loadmax is fixed (cfg.LoadMax > 0).
-		if cfg.LoadMax == 0 {
-			state.loadPeak = 2.0
-			fmt.Println("==> Load peak reset to auto-scale floor (2.0)")
-		} else {
-			fmt.Println("==> Load peak reset ignored (fixed loadmax =", cfg.LoadMax, ")")
-		}
-		// Reset disk auto-scale peak to the floor when disk bars are on and diskmax is not fixed.
-		if state.diskMode != constants.DiskModeOff && cfg.DiskMax == 0 {
-			const diskPeakFloorBps = 1048576.0 // 1 MB/s, same as in updateDiskPeak
-			state.diskPeak = diskPeakFloorBps
-			fmt.Println("==> Disk peak reset to auto-scale floor (1 MB/s)")
-		} else if state.diskMode != constants.DiskModeOff && cfg.DiskMax > 0 {
-			fmt.Println("==> Disk peak reset ignored (fixed diskmax =", cfg.DiskMax, ")")
-		}
+		resetAutoScalePeaks(cfg, state)
 	case sdl.K_e:
 		state.extended = !state.extended
 		fmt.Println("==> Toggled extended (peak line):", state.extended)
@@ -252,6 +239,64 @@ func handleToggleKeys(sym sdl.Keycode, cfg *config.Config, state *runState) {
 		state.showSeparators = !state.showSeparators
 		fmt.Println("==> Toggled host separators:", state.showSeparators)
 	}
+}
+
+func cycleCPUMode(state *runState) {
+	state.cpuMode = (state.cpuMode + 1) % constants.CPUModeCount
+	switch state.cpuMode {
+	case constants.CPUModeAverage:
+		fmt.Println("==> CPU: average bar only")
+	case constants.CPUModeCores:
+		fmt.Println("==> CPU: individual cores")
+	case constants.CPUModeOff:
+		fmt.Println("==> CPU: off")
+	}
+}
+
+func cycleDiskMode(state *runState) {
+	state.diskMode = (state.diskMode + 1) % constants.DiskModeCount
+	switch state.diskMode {
+	case constants.DiskModeAggregate:
+		fmt.Println("==> Disk: aggregate (all devices)")
+	case constants.DiskModeDevices:
+		fmt.Println("==> Disk: per-device")
+	case constants.DiskModeOff:
+		fmt.Println("==> Disk: off")
+	}
+}
+
+func toggleMem(state *runState) {
+	state.showMem = !state.showMem
+	fmt.Println("==> Toggled show mem:", state.showMem)
+}
+
+func toggleNet(state *runState) {
+	state.showNet = !state.showNet
+	fmt.Println("==> Toggled show net:", state.showNet)
+}
+
+func toggleLoad(state *runState) {
+	state.showLoad = !state.showLoad
+	fmt.Println("==> Toggled show load:", state.showLoad)
+}
+
+func resetAutoScalePeaks(cfg *config.Config, state *runState) {
+	if cfg.LoadMax == 0 {
+		state.loadPeak = 2.0
+		fmt.Println("==> Load peak reset to auto-scale floor (2.0)")
+	} else {
+		fmt.Println("==> Load peak reset ignored (fixed loadmax =", cfg.LoadMax, ")")
+	}
+	if state.diskMode == constants.DiskModeOff {
+		return
+	}
+	if cfg.DiskMax == 0 {
+		const diskPeakFloorBps = 1048576.0 // 1 MB/s, same as in updateDiskPeak
+		state.diskPeak = diskPeakFloorBps
+		fmt.Println("==> Disk peak reset to auto-scale floor (1 MB/s)")
+		return
+	}
+	fmt.Println("==> Disk peak reset ignored (fixed diskmax =", cfg.DiskMax, ")")
 }
 
 // handleAdjustAndSave processes sampling-adjust and config-write hotkeys (a, y, d, c, f, v, h, w).
@@ -433,23 +478,22 @@ func countBars(snap map[string]*stats.HostStats, cpuMode int, showMem, showNet, 
 // drawBars draws CPU, memory, and network bars for all hosts in snap.
 // Bars wrap into multiple rows when cfg.MaxBarsPerRow is set.
 func drawBars(renderer *sdl.Renderer, snap map[string]*stats.HostStats, cfg *config.Config, state *runState, numBars int) {
-	barIndex := 0
-	hosts := sortedHosts(snap)
-	maxPerRow := cfg.MaxBarsPerRow
+	bars := buildBarMap(snap, cfg, state)
 	// Track separator rects (position + row height) for drawing after all bars
 	type sepRect struct{ x, y, h int32 }
 	var separators []sepRect
-	for i, host := range hosts {
-		h := snap[host]
+	prevHost := ""
+	for i := range bars {
+		bar := bars[i]
+		h := snap[bar.host]
 		if h == nil {
 			continue
 		}
-		drawHostBars(renderer, h, host, cfg, state, numBars, maxPerRow, &barIndex)
-		// Record separator position between hosts (not after the last one)
-		if state.showSeparators && i < len(hosts)-1 {
-			sx, sy, _, sh := barRect(state.winW, state.winH, numBars, maxPerRow, barIndex)
-			separators = append(separators, sepRect{sx, sy, sh})
+		if state.showSeparators && prevHost != "" && bar.host != prevHost {
+			separators = append(separators, sepRect{bar.rect.X, bar.rect.Y, bar.rect.H})
 		}
+		drawBar(renderer, h, bar, cfg, state)
+		prevHost = bar.host
 	}
 	// Draw 1px red vertical separators on top of all bars (same color as CPU steal)
 	for _, sep := range separators {
@@ -491,10 +535,7 @@ func drawGlobalAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStats,
 	avgPct := totalUsage / float64(hostCount)
 	renderer.SetDrawColor(constants.Red.R, constants.Red.G, constants.Red.B, 255)
 	// Draw one line per row, positioned proportionally within each row's height
-	numRows := 1
-	if maxPerRow > 0 && maxPerRow < numBars {
-		numRows = (numBars + maxPerRow - 1) / maxPerRow
-	}
+	numRows := countRows(numBars, maxPerRow)
 	for row := 0; row < numRows; row++ {
 		rowY := (state.winH * int32(row)) / int32(numRows)
 		rowH := (state.winH*int32(row+1))/int32(numRows) - rowY
@@ -536,10 +577,7 @@ func drawGlobalIOAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStat
 	avgPct := totalIO / float64(hostCount)
 	renderer.SetDrawColor(constants.Pink.R, constants.Pink.G, constants.Pink.B, 255)
 	// Draw one line per row, positioned proportionally from the top of each row
-	numRows := 1
-	if maxPerRow > 0 && maxPerRow < numBars {
-		numRows = (numBars + maxPerRow - 1) / maxPerRow
-	}
+	numRows := countRows(numBars, maxPerRow)
 	for row := 0; row < numRows; row++ {
 		rowY := (state.winH * int32(row)) / int32(numRows)
 		rowH := (state.winH*int32(row+1))/int32(numRows) - rowY
@@ -554,13 +592,19 @@ func drawGlobalIOAvgLine(renderer *sdl.Renderer, snap map[string]*stats.HostStat
 	}
 }
 
-// drawHostBars draws CPU, mem, and net bars for one host and advances barIndex.
-// maxPerRow controls multi-row wrapping (0 = single row).
-func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *config.Config, state *runState, numBars, maxPerRow int, barIndex *int) {
-	cpuNames := sortedCPUNames(h.CPU, state.cpuMode)
-	for _, name := range cpuNames {
-		key := host + ";" + name
-		cur := h.CPU[name]
+func countRows(numBars, maxPerRow int) int {
+	if maxPerRow > 0 && maxPerRow < numBars {
+		return (numBars + maxPerRow - 1) / maxPerRow
+	}
+	return 1
+}
+
+func drawBar(renderer *sdl.Renderer, h *stats.HostStats, bar barDescriptor, cfg *config.Config, state *runState) {
+	x, y, barW, barH := bar.rect.X, bar.rect.Y, bar.rect.W, bar.rect.H
+	switch bar.kind {
+	case barCPU:
+		key := bar.host + ";" + bar.cpuName
+		cur := h.CPU[bar.cpuName]
 		prev := state.prevCPU[key]
 		state.prevCPU[key] = cur
 		target, ok := cpuBarTargetPcts(cur, prev)
@@ -578,72 +622,30 @@ func drawHostBars(renderer *sdl.Renderer, h *stats.HostStats, host string, cfg *
 			normalizePcts(s)
 		}
 		peakPct := peakPctForBar(state, key, cfg.CPUAverage, s)
-		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
-		*barIndex++
 		drawCPUBarFromPcts(renderer, s, barW, x, y, barH, state.extended, peakPct)
-	}
-	if state.showMem {
-		if state.smoothedMem[host] == nil {
-			state.smoothedMem[host] = &struct{ ramUsed, swapUsed float64 }{}
+	case barMem:
+		if state.smoothedMem[bar.host] == nil {
+			state.smoothedMem[bar.host] = &struct{ ramUsed, swapUsed float64 }{}
 		}
-		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
-		*barIndex++
-		drawMemBarSmoothed(renderer, h, state.smoothedMem[host], smoothFactor, barW, x, y, barH)
-	}
-	if state.showNet {
-		if state.smoothedNet[host] == nil {
-			state.smoothedNet[host] = &struct{ rxPct, txPct float64 }{}
+		drawMemBarSmoothed(renderer, h, state.smoothedMem[bar.host], smoothFactor, barW, x, y, barH)
+	case barNet:
+		if state.smoothedNet[bar.host] == nil {
+			state.smoothedNet[bar.host] = &struct{ rxPct, txPct float64 }{}
 		}
-		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
-		*barIndex++
-		state.prevNet[host] = drawNetBarSmoothed(renderer, h, cfg, state.smoothedNet[host], state.prevNet[host], smoothFactor, barW, x, y, barH)
-	}
-	if state.showLoad {
-		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
-		*barIndex++
+		state.prevNet[bar.host] = drawNetBarSmoothed(renderer, h, cfg, state.smoothedNet[bar.host], state.prevNet[bar.host], smoothFactor, barW, x, y, barH)
+	case barLoad:
 		drawLoadAvgBar(renderer, h, state.loadPeak, barW, x, y, barH)
-	}
-	// Disk I/O bars: aggregate (one bar) or per-device based on diskMode
-	diskNames := sortedDiskNames(h.Disk, state.diskMode)
-	for _, dname := range diskNames {
-		key := host + ";disk;" + dname
-		var cur stats.DiskStamp
-		if dname == "all" {
+	case barDisk:
+		key := bar.host + ";disk;" + bar.diskName
+		cur := h.Disk[bar.diskName]
+		if bar.diskName == "all" {
 			cur = sumAllDisks(h.Disk)
-		} else {
-			cur = h.Disk[dname]
 		}
 		if state.smoothedDisk[key] == nil {
 			state.smoothedDisk[key] = &struct{ readPct, writePct float64 }{}
 		}
-		x, y, barW, barH := barRect(state.winW, state.winH, numBars, maxPerRow, *barIndex)
-		*barIndex++
 		state.prevDisk[key] = drawDiskBarSmoothed(renderer, cur, state, state.smoothedDisk[key], state.prevDisk[key], smoothFactor, barW, x, y, barH, state.extended)
 	}
-}
-
-func peakPctForBar(state *runState, key string, cpuAvg int, s *[10]float64) float64 {
-	if !state.extended || s == nil {
-		return 0
-	}
-	userSys := (*s)[0] + (*s)[1]
-	hist := state.peakHistory[key]
-	hist = append(hist, userSys)
-	n := cpuAvg
-	if n < 1 {
-		n = 1
-	}
-	for len(hist) > n {
-		hist = hist[1:]
-	}
-	state.peakHistory[key] = hist
-	var max float64
-	for _, v := range hist {
-		if v > max {
-			max = v
-		}
-	}
-	return max
 }
 
 func sortedHosts(snap map[string]*stats.HostStats) []string {
@@ -653,189 +655,6 @@ func sortedHosts(snap map[string]*stats.HostStats) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func sortedCPUNames(cpu map[string]collector.CPULine, cpuMode int) []string {
-	// CPUModeOff: hide all CPU bars
-	if cpuMode == constants.CPUModeOff {
-		return nil
-	}
-	var names []string
-	for name := range cpu {
-		if name == "cpu" {
-			// Aggregate bar always shown unless CPUModeOff
-			names = append(names, "cpu")
-			continue
-		}
-		// Individual core bars only shown in CPUModeCores
-		if cpuMode == constants.CPUModeCores {
-			names = append(names, name)
-		}
-	}
-	sort.Slice(names, func(i, j int) bool {
-		if names[i] == "cpu" {
-			return true
-		}
-		if names[j] == "cpu" {
-			return false
-		}
-		return names[i] < names[j]
-	})
-	return names
-}
-
-// cpuBarTargetPcts returns the 9 segment percentages (system, user, nice, idle, iowait, irq, softirq, guest, steal) from cur/prev delta. ok is false if no valid sample.
-func cpuBarTargetPcts(cur, prev collector.CPULine) (out [10]float64, ok bool) {
-	totalCur := cur.Total()
-	totalPrev := prev.Total()
-	if totalPrev == 0 || totalCur <= totalPrev {
-		return out, false
-	}
-	scale := float64(totalCur-totalPrev) / 100.0
-	if scale <= 0 {
-		return out, false
-	}
-	out[0] = float64(cur.System-prev.System) / scale
-	out[1] = float64(cur.User-prev.User) / scale
-	out[2] = float64(cur.Nice-prev.Nice) / scale
-	out[3] = float64(cur.Idle-prev.Idle) / scale
-	out[4] = float64(cur.Iowait-prev.Iowait) / scale
-	out[5] = float64(cur.IRQ-prev.IRQ) / scale
-	out[6] = float64(cur.SoftIRQ-prev.SoftIRQ) / scale
-	out[7] = float64(cur.Guest-prev.Guest) / scale
-	out[8] = float64(cur.Steal-prev.Steal) / scale
-	out[9] = float64(cur.GuestNice-prev.GuestNice) / scale
-	for i := range out {
-		if out[i] < 0 {
-			out[i] = 0
-		}
-		if out[i] > 100 {
-			out[i] = 100
-		}
-	}
-	return out, true
-}
-
-func normalizePcts(s *[10]float64) {
-	var sum float64
-	for i := 0; i < 10; i++ {
-		sum += (*s)[i]
-	}
-	if sum <= 0 {
-		return
-	}
-	for i := 0; i < 10; i++ {
-		(*s)[i] = (*s)[i] * 100 / sum
-	}
-}
-
-// drawCPUBarFromPcts draws one CPU bar from 10 smoothed segment percentages.
-// The bar occupies the region (x, y) with dimensions (barW, barH).
-// If s is nil, only clears the slot. When extended is true and peakPct > 0,
-// draws a 1px peak line (max system+user over history).
-func drawCPUBarFromPcts(renderer *sdl.Renderer, s *[10]float64, barW int32, x, y, barH int32, extended bool, peakPct float64) {
-	// Clear this slot so we never leave previous (e.g. mem/net) content visible
-	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-	renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: barH})
-	if s == nil {
-		return
-	}
-	pxPerPct := float64(barH) / 100.0
-	curY := float64(y + barH)
-	fill := func(r, g, b uint8, pct float64) {
-		hh := int32(pct * pxPerPct)
-		if hh < 1 && pct > 0 {
-			hh = 1
-		}
-		curY -= float64(hh)
-		renderer.SetDrawColor(r, g, b, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: int32(curY), W: barW, H: hh})
-	}
-	fill(constants.Blue.R, constants.Blue.G, constants.Blue.B, (*s)[0])                // system
-	fill(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, (*s)[1])          // user
-	fill(constants.Green.R, constants.Green.G, constants.Green.B, (*s)[2])             // nice
-	fill(constants.LimeGreen.R, constants.LimeGreen.G, constants.LimeGreen.B, (*s)[9]) // guestnice
-	fill(constants.Black.R, constants.Black.G, constants.Black.B, (*s)[3])             // idle
-	fill(constants.Purple.R, constants.Purple.G, constants.Purple.B, (*s)[4])          // iowait
-	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[5])             // irq
-	fill(constants.White.R, constants.White.G, constants.White.B, (*s)[6])             // softirq
-	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[7])                   // guest
-	fill(constants.Red.R, constants.Red.G, constants.Red.B, (*s)[8])                   // steal
-	// Extended: 1px peak line at max (system+user) over history
-	if extended && peakPct > 0 {
-		peakY := y + barH - int32(peakPct*pxPerPct)
-		if peakY < y {
-			peakY = y
-		}
-		if peakY >= y+barH {
-			peakY = y + barH - 1
-		}
-		if peakPct > float64(constants.UserOrangeThreshold) {
-			renderer.SetDrawColor(constants.Orange.R, constants.Orange.G, constants.Orange.B, 255)
-		} else if peakPct > float64(constants.UserYellowThreshold) {
-			renderer.SetDrawColor(constants.Yellow0.R, constants.Yellow0.G, constants.Yellow0.B, 255)
-		} else {
-			renderer.SetDrawColor(constants.Yellow.R, constants.Yellow.G, constants.Yellow.B, 255)
-		}
-		renderer.FillRect(&sdl.Rect{X: x, Y: peakY, W: barW, H: 1})
-	}
-}
-
-// drawMemBarSmoothed blends mem stats toward target and draws one memory bar (RAM left, Swap right).
-// The bar occupies the region (x, y) with dimensions (barW, barH).
-func drawMemBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, smoothed *struct{ ramUsed, swapUsed float64 }, factor float64, barW int32, x, y, barH int32) {
-	// Clear this slot so we never leave previous (e.g. CPU/net) content visible
-	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-	renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: barH})
-	if h.Mem == nil {
-		return
-	}
-	var targetRam, targetSwap float64
-	if memTotal := h.Mem["MemTotal"]; memTotal > 0 {
-		targetRam = 100 - 100*float64(h.Mem["MemFree"])/float64(memTotal)
-		if targetRam < 0 {
-			targetRam = 0
-		}
-		if targetRam > 100 {
-			targetRam = 100
-		}
-	}
-	if swapTotal := h.Mem["SwapTotal"]; swapTotal > 0 {
-		targetSwap = 100 - 100*float64(h.Mem["SwapFree"])/float64(swapTotal)
-		if targetSwap < 0 {
-			targetSwap = 0
-		}
-		if targetSwap > 100 {
-			targetSwap = 100
-		}
-	}
-	smoothed.ramUsed += (targetRam - smoothed.ramUsed) * factor
-	smoothed.swapUsed += (targetSwap - smoothed.swapUsed) * factor
-
-	halfW := barW / 2
-	pxPerPct := float64(barH) / 100.0
-
-	// RAM: used (dark grey) from bottom, free (black) on top
-	ramUsedH := int32(smoothed.ramUsed * pxPerPct)
-	if ramUsedH > 0 {
-		renderer.SetDrawColor(constants.DarkGrey.R, constants.DarkGrey.G, constants.DarkGrey.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: y + barH - ramUsedH, W: halfW, H: ramUsedH})
-	}
-	if ramFreeH := barH - ramUsedH; ramFreeH > 0 {
-		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: y, W: halfW, H: ramFreeH})
-	}
-
-	// Swap: used (grey) from bottom, free (black) on top
-	swapUsedH := int32(smoothed.swapUsed * pxPerPct)
-	if swapUsedH > 0 {
-		renderer.SetDrawColor(constants.Grey.R, constants.Grey.G, constants.Grey.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: y + barH - swapUsedH, W: halfW, H: swapUsedH})
-	}
-	if swapFreeH := barH - swapUsedH; swapFreeH > 0 {
-		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: y, W: halfW, H: swapFreeH})
-	}
 }
 
 func printHotkeys() {
@@ -872,145 +691,6 @@ func linkScaleIndex(netLink string) int {
 		}
 	}
 	return 3 // default: gbit
-}
-
-func netLinkBytesPerSec(cfg *config.Config) int64 {
-	s := strings.ToLower(strings.TrimSpace(cfg.NetLink))
-	switch s {
-	case "gbit", "1gbit":
-		return int64(constants.BytesGbit)
-	case "10gbit":
-		return int64(constants.Bytes10Gbit)
-	case "mbit", "1mbit":
-		return int64(constants.BytesMbit)
-	case "10mbit":
-		return int64(constants.Bytes10Mbit)
-	case "100mbit":
-		return int64(constants.Bytes100Mbit)
-	case "":
-		return int64(constants.BytesGbit)
-	}
-	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return n * int64(constants.BytesMbit)
-	}
-	return int64(constants.BytesGbit)
-}
-
-// sumNonLoNet aggregates RX (B) and TX (Tb) bytes across all non-lo interfaces,
-// using the latest timestamp from any interface.
-func sumNonLoNet(h *stats.HostStats) (sum stats.NetStamp, hasIface bool) {
-	if h.Net == nil {
-		return sum, false
-	}
-	for iface, ns := range h.Net {
-		if iface == "lo" {
-			continue
-		}
-		hasIface = true
-		sum.B += ns.B
-		sum.Tb += ns.Tb
-		if ns.Stamp > sum.Stamp {
-			sum.Stamp = ns.Stamp
-		}
-	}
-	return sum, hasIface
-}
-
-// drawNetBarSmoothed sums RX/TX across all non-lo interfaces, computes utilization
-// vs link speed, smooths toward target, and draws one net bar (RX left from top, TX right from bottom).
-// The bar occupies the region (x, y) with dimensions (barW, barH).
-// Smoothed values and prevNet are only updated when new collector data arrives
-// (cur.Stamp > prev.Stamp), so the bar holds steady between collector cycles
-// instead of decaying toward zero on frames with no new data.
-// drawNetBarSmoothed sums RX/TX across all non-lo interfaces, computes utilization
-// vs link speed, smooths toward target, and draws one net bar (RX left from top, TX right from bottom).
-// The bar occupies the region (x, y) with dimensions (barW, barH).
-// Smoothed values and prevNet are only updated when new collector data arrives
-// (cur.Stamp > prev.Stamp), so the bar holds steady between collector cycles
-// instead of decaying toward zero on frames with no new data.
-func drawNetBarSmoothed(renderer *sdl.Renderer, h *stats.HostStats, cfg *config.Config, smoothed *struct{ rxPct, txPct float64 }, prev stats.NetStamp, factor float64, barW int32, x, y, barH int32) stats.NetStamp {
-	// Clear this slot so we never leave previous (e.g. CPU/mem) content visible
-	renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-	renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: barH})
-	cur, hasIface := sumNonLoNet(h)
-	if !hasIface {
-		// No non-lo interface: show red bar
-		renderer.SetDrawColor(constants.Red.R, constants.Red.G, constants.Red.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: y, W: barW, H: barH})
-		return prev
-	}
-	// Only recompute and smooth when the collector has provided new data.
-	// The collector updates net stamps every ~2.8s, but drawFrame runs every
-	// ~0.14s. Without this guard, the 19 intermediate frames would set
-	// target to 0 (no delta) and smooth the bar toward zero, making real
-	// traffic invisible.
-	if cur.Stamp > prev.Stamp && prev.Stamp > 0 {
-		prev = smoothNetUtilization(cur, prev, cfg, smoothed, factor)
-	} else if prev.Stamp == 0 {
-		// First sample: record it but don't draw yet (no delta available)
-		prev = cur
-	}
-	drawNetHalves(renderer, smoothed, x, y, barW, barH)
-	return prev
-}
-
-// smoothNetUtilization computes RX/TX utilization deltas and blends them into smoothed.
-// Returns the updated previous stamp (cur) so callers can advance the baseline.
-func smoothNetUtilization(cur, prev stats.NetStamp, cfg *config.Config, smoothed *struct{ rxPct, txPct float64 }, factor float64) stats.NetStamp {
-	linkBps := netLinkBytesPerSec(cfg)
-	if linkBps <= 0 {
-		linkBps = int64(constants.BytesGbit)
-	}
-	dt := cur.Stamp - prev.Stamp
-	if dt > 0 {
-		deltaB := cur.B - prev.B
-		deltaTb := cur.Tb - prev.Tb
-		if deltaB < 0 {
-			deltaB = 0
-		}
-		if deltaTb < 0 {
-			deltaTb = 0
-		}
-		targetRx := 100 * float64(deltaB) / (float64(linkBps) * dt)
-		targetTx := 100 * float64(deltaTb) / (float64(linkBps) * dt)
-		smoothed.rxPct += (targetRx - smoothed.rxPct) * factor
-		smoothed.txPct += (targetTx - smoothed.txPct) * factor
-	}
-	return cur // advance the baseline to the consumed sample
-}
-
-// drawNetHalves renders the RX (left half, from top) and TX (right half, from bottom)
-// filled rectangles for one network bar using pre-smoothed utilization percentages.
-func drawNetHalves(renderer *sdl.Renderer, smoothed *struct{ rxPct, txPct float64 }, x, y, barW, barH int32) {
-	halfW := barW / 2
-	pxPerPct := float64(barH) / 100.0
-	halfH := barH / 2
-	// Left half: RX from top (light green = used)
-	rxH := int32(smoothed.rxPct * pxPerPct)
-	if rxH > halfH {
-		rxH = halfH
-	}
-	if rxH > 0 {
-		renderer.SetDrawColor(constants.LightGreen.R, constants.LightGreen.G, constants.LightGreen.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: y, W: halfW, H: rxH})
-	}
-	if halfW > 0 && halfH-rxH > 0 {
-		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: y + rxH, W: halfW, H: halfH - rxH})
-	}
-	// Right half: TX from bottom (light green = used)
-	txH := int32(smoothed.txPct * pxPerPct)
-	if txH > halfH {
-		txH = halfH
-	}
-	if txH > 0 {
-		renderer.SetDrawColor(constants.LightGreen.R, constants.LightGreen.G, constants.LightGreen.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: y + barH - txH, W: halfW, H: txH})
-	}
-	if halfW > 0 && (barH-txH) > 0 {
-		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x + halfW, Y: y, W: halfW, H: barH - txH})
-	}
 }
 
 // updateLoadPeak maintains the load scale used by the bar renderer.

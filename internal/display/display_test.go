@@ -1632,7 +1632,7 @@ func TestIsWholeDisk(t *testing.T) {
 		{"ram0", false},
 		{"dm-0", false},
 		{"dm-1", false},
-		{"sr0", true},   // CD-ROM, not a partition
+		{"sr0", true},     // CD-ROM, not a partition
 		{"mmcblk0", true}, // SD card, whole disk
 	}
 	for _, tt := range tests {
@@ -1674,10 +1674,10 @@ func TestSortedDiskNames(t *testing.T) {
 
 func TestSumAllDisks(t *testing.T) {
 	disk := map[string]stats.DiskStamp{
-		"sda":       {SectorsRead: 100, SectorsWrite: 200, IoTicks: 10, Stamp: 2.0},
-		"sda1":      {SectorsRead: 50, SectorsWrite: 100, IoTicks: 5, Stamp: 2.0},  // partition, skipped
-		"nvme0n1":   {SectorsRead: 300, SectorsWrite: 400, IoTicks: 20, Stamp: 3.0},
-		"loop0":     {SectorsRead: 10, SectorsWrite: 0, IoTicks: 1, Stamp: 1.0},     // loop, skipped
+		"sda":     {SectorsRead: 100, SectorsWrite: 200, IoTicks: 10, Stamp: 2.0},
+		"sda1":    {SectorsRead: 50, SectorsWrite: 100, IoTicks: 5, Stamp: 2.0}, // partition, skipped
+		"nvme0n1": {SectorsRead: 300, SectorsWrite: 400, IoTicks: 20, Stamp: 3.0},
+		"loop0":   {SectorsRead: 10, SectorsWrite: 0, IoTicks: 1, Stamp: 1.0}, // loop, skipped
 	}
 	sum := sumAllDisks(disk)
 	if sum.SectorsRead != 400 || sum.SectorsWrite != 600 || sum.IoTicks != 30 {
@@ -1692,9 +1692,15 @@ func TestSumAllDisks(t *testing.T) {
 func TestUpdateDiskPeak(t *testing.T) {
 	// Fixed override: diskPeak always equals DiskMax
 	state := &runState{
-		diskMode: constants.DiskModeAggregate,
-		diskPeak: 1048576,
-		prevDisk: make(map[string]stats.DiskStamp),
+		displayFlags: displayFlags{
+			diskMode: constants.DiskModeAggregate,
+		},
+		peakState: peakState{
+			diskPeak: 1048576,
+		},
+		smoothState: smoothState{
+			prevDisk: make(map[string]stats.DiskStamp),
+		},
 	}
 	snap := map[string]*stats.HostStats{}
 	updateDiskPeak(snap, state, 5000000) // fixed 5 MB/s
@@ -1842,7 +1848,7 @@ func TestDiskBar_Rendering(t *testing.T) {
 	src1 := &mockSource{
 		data: map[string]*stats.HostStats{
 			"host1": {
-				CPU:  map[string]collector.CPULine{"cpu": cur},
+				CPU: map[string]collector.CPULine{"cpu": cur},
 				Disk: map[string]stats.DiskStamp{
 					"sda": {SectorsRead: 0, SectorsWrite: 0, IoTicks: 0, Stamp: 1.0},
 				},
@@ -1872,7 +1878,7 @@ func TestDiskBar_Rendering(t *testing.T) {
 	src2 := &mockSource{
 		data: map[string]*stats.HostStats{
 			"host1": {
-				CPU:  map[string]collector.CPULine{"cpu": cur},
+				CPU: map[string]collector.CPULine{"cpu": cur},
 				Disk: map[string]stats.DiskStamp{
 					"sda": {SectorsRead: 100000, SectorsWrite: 50000, IoTicks: 500, Stamp: 4.0},
 				},

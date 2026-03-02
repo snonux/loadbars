@@ -115,7 +115,7 @@ func updateDiskPeak(snap map[string]*stats.HostStats, state *runState, diskMax f
 
 // drawDiskBarSmoothed draws a single disk bar with read (top, purple) and write (bottom,
 // darker purple). Returns the current DiskStamp to be stored as previous for the next frame.
-func drawDiskBarSmoothed(renderer *sdl.Renderer, cur stats.DiskStamp, cfg *runState, smoothed *struct{ readPct, writePct float64 }, prev stats.DiskStamp, factor float64, barW, x, y, barH int32, extended bool) stats.DiskStamp {
+func drawDiskBarSmoothed(renderer *sdl.Renderer, cur stats.DiskStamp, state *runState, smoothed *struct{ readPct, writePct float64 }, prev stats.DiskStamp, factor float64, barW, x, y, barH int32, extended bool) stats.DiskStamp {
 	// Clear this slot to a dim purple so the bar is visible even when idle.
 	// This distinguishes "disk bar present but idle" from background.
 	renderer.SetDrawColor(0x18, 0x00, 0x28, 255)
@@ -123,7 +123,7 @@ func drawDiskBarSmoothed(renderer *sdl.Renderer, cur stats.DiskStamp, cfg *runSt
 
 	// Only recompute when the collector has provided new data (same guard as net bars).
 	if cur.Stamp > prev.Stamp && prev.Stamp > 0 {
-		prev = smoothDiskUtilization(cur, prev, cfg, smoothed, factor)
+		prev = smoothDiskUtilization(cur, prev, state, smoothed, factor)
 	} else if prev.Stamp == 0 && cur.Stamp > 0 {
 		// First sample: record it but can't compute delta yet.
 		prev = cur
@@ -133,7 +133,7 @@ func drawDiskBarSmoothed(renderer *sdl.Renderer, cur stats.DiskStamp, cfg *runSt
 
 	// In extended mode, overlay a utilization % line
 	if extended && prev.Stamp > 0 {
-		drawDiskUtilLine(renderer, cur, prev, cfg, x, y, barW, barH)
+		drawDiskUtilLine(renderer, cur, prev, x, y, barW, barH)
 	}
 	return prev
 }
@@ -192,7 +192,7 @@ func drawDiskHalves(renderer *sdl.Renderer, smoothed *struct{ readPct, writePct 
 
 // drawDiskUtilLine draws a 3px-thick horizontal line showing disk utilization %
 // (fraction of time the device had I/O in progress) in extended mode.
-func drawDiskUtilLine(renderer *sdl.Renderer, cur, prev stats.DiskStamp, state *runState, x, y, barW, barH int32) {
+func drawDiskUtilLine(renderer *sdl.Renderer, cur, prev stats.DiskStamp, x, y, barW, barH int32) {
 	dt := cur.Stamp - prev.Stamp
 	if dt <= 0 {
 		return

@@ -26,70 +26,42 @@ type barDescriptor struct {
 	rect     sdl.Rect
 }
 
-// buildBarMap replays the same host/bar iteration as drawBars to produce
-// a slice of bar descriptors with their screen rectangles.
-func buildBarMap(snap map[string]*stats.HostStats, cfg *config.Config, state *runState) []barDescriptor {
-	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet, state.showLoad, state.diskMode)
-	maxPerRow := cfg.MaxBarsPerRow
-	hosts := sortedHosts(snap)
-
-	bars := make([]barDescriptor, 0, numBars)
-	barIndex := 0
-	for _, host := range hosts {
+// iterateBars emits bars in the canonical host/CPU/mem/net/load/disk order.
+func iterateBars(snap map[string]*stats.HostStats, state *runState, visit func(h *stats.HostStats, bar barDescriptor)) {
+	for _, host := range sortedHosts(snap) {
 		h := snap[host]
 		if h == nil {
 			continue
 		}
-		cpuNames := sortedCPUNames(h.CPU, state.cpuMode)
-		for _, name := range cpuNames {
-			x, y, w, bh := barRect(state.winW, state.winH, numBars, maxPerRow, barIndex)
-			bars = append(bars, barDescriptor{
-				host:    host,
-				kind:    barCPU,
-				cpuName: name,
-				rect:    sdl.Rect{X: x, Y: y, W: w, H: bh},
-			})
-			barIndex++
+		for _, name := range sortedCPUNames(h.CPU, state.cpuMode) {
+			visit(h, barDescriptor{host: host, kind: barCPU, cpuName: name})
 		}
 		if state.showMem {
-			x, y, w, bh := barRect(state.winW, state.winH, numBars, maxPerRow, barIndex)
-			bars = append(bars, barDescriptor{
-				host: host,
-				kind: barMem,
-				rect: sdl.Rect{X: x, Y: y, W: w, H: bh},
-			})
-			barIndex++
+			visit(h, barDescriptor{host: host, kind: barMem})
 		}
 		if state.showNet {
-			x, y, w, bh := barRect(state.winW, state.winH, numBars, maxPerRow, barIndex)
-			bars = append(bars, barDescriptor{
-				host: host,
-				kind: barNet,
-				rect: sdl.Rect{X: x, Y: y, W: w, H: bh},
-			})
-			barIndex++
+			visit(h, barDescriptor{host: host, kind: barNet})
 		}
 		if state.showLoad {
-			x, y, w, bh := barRect(state.winW, state.winH, numBars, maxPerRow, barIndex)
-			bars = append(bars, barDescriptor{
-				host: host,
-				kind: barLoad,
-				rect: sdl.Rect{X: x, Y: y, W: w, H: bh},
-			})
-			barIndex++
+			visit(h, barDescriptor{host: host, kind: barLoad})
 		}
-		diskNames := sortedDiskNames(h.Disk, state.diskMode)
-		for _, dname := range diskNames {
-			x, y, w, bh := barRect(state.winW, state.winH, numBars, maxPerRow, barIndex)
-			bars = append(bars, barDescriptor{
-				host:     host,
-				kind:     barDisk,
-				diskName: dname,
-				rect:     sdl.Rect{X: x, Y: y, W: w, H: bh},
-			})
-			barIndex++
+		for _, dname := range sortedDiskNames(h.Disk, state.diskMode) {
+			visit(h, barDescriptor{host: host, kind: barDisk, diskName: dname})
 		}
 	}
+}
+
+// buildBarMap produces bar descriptors with screen rectangles.
+func buildBarMap(snap map[string]*stats.HostStats, cfg *config.Config, state *runState) []barDescriptor {
+	numBars := countBars(snap, state.cpuMode, state.showMem, state.showNet, state.showLoad, state.diskMode)
+	bars := make([]barDescriptor, 0, numBars)
+	barIndex := 0
+	iterateBars(snap, state, func(_ *stats.HostStats, bar barDescriptor) {
+		x, y, w, bh := barRect(state.winW, state.winH, numBars, cfg.MaxBarsPerRow, barIndex)
+		bar.rect = sdl.Rect{X: x, Y: y, W: w, H: bh}
+		bars = append(bars, bar)
+		barIndex++
+	})
 	return bars
 }
 

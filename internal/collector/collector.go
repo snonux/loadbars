@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -163,8 +164,8 @@ func isLocal(h string) bool {
 
 // getLocalScript returns the appropriate script for the local OS
 func getLocalScript() []byte {
-	// Check if /proc exists (Linux/Unix)
-	if _, err := exec.Command("test", "-d", "/proc").CombinedOutput(); err == nil {
+	// Check if /proc exists (Linux/Unix).
+	if st, err := os.Stat("/proc"); err == nil && st.IsDir() {
 		return LinuxScript
 	}
 	// /proc not found - unsupported OS for local stats gathering

@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"codeberg.org/snonux/loadbars/internal/constants"
-	"codeberg.org/snonux/loadbars/internal/stats"
+	"github.com/snonux/loadbars/internal/constants"
+	"github.com/snonux/loadbars/internal/stats"
 	"github.com/veandco/go-sdl2/sdl"
 )
 

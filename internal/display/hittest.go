@@ -1,8 +1,8 @@
 package display
 
 import (
-	"codeberg.org/snonux/loadbars/internal/config"
-	"codeberg.org/snonux/loadbars/internal/stats"
+	"github.com/snonux/loadbars/internal/config"
+	"github.com/snonux/loadbars/internal/stats"
 	"github.com/veandco/go-sdl2/sdl"
 )
 

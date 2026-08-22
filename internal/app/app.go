@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"codeberg.org/snonux/loadbars/internal/collector"
-	"codeberg.org/snonux/loadbars/internal/config"
-	"codeberg.org/snonux/loadbars/internal/display"
+	"github.com/snonux/loadbars/internal/collector"
+	"github.com/snonux/loadbars/internal/config"
+	"github.com/snonux/loadbars/internal/display"
 )
 
 // Run starts the loadbars application: collectors and display.

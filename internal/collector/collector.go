@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/loadbars/internal/config"
+	"github.com/snonux/loadbars/internal/config"
 )
 
 // StatsStore is the interface for receiving parsed stats (implemented by app).

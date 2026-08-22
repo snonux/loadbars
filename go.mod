@@ -1,4 +1,4 @@
-module codeberg.org/snonux/loadbars
+module github.com/snonux/loadbars
 
 go 1.25
 

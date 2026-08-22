@@ -3,8 +3,8 @@ package app
 import (
 	"sync"
 
-	"codeberg.org/snonux/loadbars/internal/collector"
-	"codeberg.org/snonux/loadbars/internal/stats"
+	"github.com/snonux/loadbars/internal/collector"
+	"github.com/snonux/loadbars/internal/stats"
 )
 
 // Store holds current stats from all hosts and implements collector.StatsStore.

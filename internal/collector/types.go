@@ -1,6 +1,6 @@
 package collector
 
-import "codeberg.org/snonux/loadbars/internal/stats"
+import "github.com/snonux/loadbars/internal/stats"
 
 // Collector parsing uses the shared stats protocol types.
 type CPULine = stats.CPULine

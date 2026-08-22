@@ -3,8 +3,8 @@ package app
 import (
 	"testing"
 
-	"codeberg.org/snonux/loadbars/internal/collector"
-	"codeberg.org/snonux/loadbars/internal/stats"
+	"github.com/snonux/loadbars/internal/collector"
+	"github.com/snonux/loadbars/internal/stats"
 )
 
 func TestSetDisk(t *testing.T) {

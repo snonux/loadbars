@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"codeberg.org/snonux/loadbars/internal/app"
-	"codeberg.org/snonux/loadbars/internal/config"
-	"codeberg.org/snonux/loadbars/internal/constants"
-	"codeberg.org/snonux/loadbars/internal/version"
+	"github.com/snonux/loadbars/internal/app"
+	"github.com/snonux/loadbars/internal/config"
+	"github.com/snonux/loadbars/internal/constants"
+	"github.com/snonux/loadbars/internal/version"
 )
 
 func main() {

@@ -94,22 +94,23 @@ func smoothNetUtilization(cur, prev stats.NetStamp, cfg *config.Config, smoothed
 func drawNetHalves(renderer *sdl.Renderer, smoothed *struct{ rxPct, txPct float64 }, x, y, barW, barH int32) {
 	halfW := barW / 2
 	pxPerPct := float64(barH) / 100.0
-	halfH := barH / 2
+	// RX (left half) and TX (right half) never overlap, so each may use the
+	// full bar height; 100% utilisation of the link reference = full height.
 	rxH := int32(smoothed.rxPct * pxPerPct)
-	if rxH > halfH {
-		rxH = halfH
+	if rxH > barH {
+		rxH = barH
 	}
 	if rxH > 0 {
 		renderer.SetDrawColor(constants.LightGreen.R, constants.LightGreen.G, constants.LightGreen.B, 255)
 		renderer.FillRect(&sdl.Rect{X: x, Y: y, W: halfW, H: rxH})
 	}
-	if halfW > 0 && halfH-rxH > 0 {
+	if halfW > 0 && barH-rxH > 0 {
 		renderer.SetDrawColor(constants.Black.R, constants.Black.G, constants.Black.B, 255)
-		renderer.FillRect(&sdl.Rect{X: x, Y: y + rxH, W: halfW, H: halfH - rxH})
+		renderer.FillRect(&sdl.Rect{X: x, Y: y + rxH, W: halfW, H: barH - rxH})
 	}
 	txH := int32(smoothed.txPct * pxPerPct)
-	if txH > halfH {
-		txH = halfH
+	if txH > barH {
+		txH = barH
 	}
 	if txH > 0 {
 		renderer.SetDrawColor(constants.LightGreen.R, constants.LightGreen.G, constants.LightGreen.B, 255)

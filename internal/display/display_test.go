@@ -307,6 +307,54 @@ func TestNetBar_RxTx(t *testing.T) {
 	assertPixelColor(t, surface, 85, 10, constants.Black, tol, "TX free area")
 }
 
+// TestNetBar_AbovePercent50 checks that utilisation above 50% keeps growing the
+// bar instead of being clipped at half the bar height.
+func TestNetBar_AbovePercent50(t *testing.T) {
+	const w, h int32 = 100, 100
+
+	renderer, surface, err := createTestRenderer(w, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Destroy()
+	defer surface.Free()
+
+	cfg := defaultTestConfig()
+	cfg.CPUMode = constants.CPUModeAverage
+	cfg.ShowMem = false
+	cfg.ShowNet = true
+	cfg.NetLink = "gbit"
+
+	// RX: 100000000 bytes in 1s = 80% of gbit, TX: 87500000 = 70% of gbit
+	src := &mockSource{
+		data: map[string]*stats.HostStats{
+			"host1": {
+				CPU: map[string]collector.CPULine{
+					"cpu": {User: 100, System: 100, Idle: 800},
+				},
+				Net: map[string]stats.NetStamp{
+					"eth0": {B: 100000000, Tb: 87500000, Stamp: 2.0},
+				},
+			},
+		},
+	}
+
+	state := newRunState(cfg, w, h)
+	state.prevCPU["host1;cpu"] = collector.CPULine{}
+	state.prevNet["host1"] = stats.NetStamp{B: 0, Tb: 0, Stamp: 1.0}
+	state.smoothedNet["host1"] = &struct{ rxPct, txPct float64 }{rxPct: 80, txPct: 70}
+
+	drawFrame(renderer, src, cfg, state)
+
+	const tol = 5
+	// RX from the top: 80px, so y=70 is still green and y=90 is free.
+	assertPixelColor(t, surface, 60, 70, constants.LightGreen, tol, "RX above 50%")
+	assertPixelColor(t, surface, 60, 90, constants.Black, tol, "RX free area")
+	// TX from the bottom: 70px, so y=40 is green and y=20 is free.
+	assertPixelColor(t, surface, 85, 40, constants.LightGreen, tol, "TX above 50%")
+	assertPixelColor(t, surface, 85, 20, constants.Black, tol, "TX free area")
+}
+
 func TestNetBar_AggregatesAllInterfaces(t *testing.T) {
 	const w, h int32 = 100, 100
 
@@ -1792,6 +1840,24 @@ func TestHandleKey_WriteConfig_Disk(t *testing.T) {
 
 	if cfg.DiskMode != constants.DiskModeAggregate {
 		t.Errorf("expected DiskMode=DiskModeAggregate in config after 'w', got %d", cfg.DiskMode)
+	}
+}
+
+func TestHandleKey_WriteConfig_WindowSize(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	// Simulate a resize with the arrow keys or the mouse.
+	state.winW, state.winH = 1300, 250
+
+	handleKey(sdl.K_w, nil, cfg, state)
+
+	if cfg.BarWidth != 1300 || cfg.Height != 250 {
+		t.Errorf("expected window size 1300x250 in config after 'w', got %dx%d", cfg.BarWidth, cfg.Height)
 	}
 }
 

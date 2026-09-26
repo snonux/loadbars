@@ -6,6 +6,8 @@ Loadbars is a tool that can be used to observe CPU loads of several remote serve
 
 ![Loadbars](loadbars.gif)
 
+**New to loadbars? Read the [usage guide](docs/usage-guide.md)**: every feature explained with an animated GIF, including how to watch many remote servers at once.
+
 ### Tested platforms
 
 This version of loadbars has been tested on:
@@ -71,28 +73,35 @@ All options can also be set in `~/.loadbarsrc` (key=value, no leading `--`). CLI
 | `--maxwidth <n>` | Maximum window width in pixels | 1900 |
 | `--cpuaverage <n>` | Number of CPU samples used for average (and extended peak history) | 10 |
 | `--netaverage <n>` | Number of network samples used for average | 15 |
-| `--netlink <speed>` | Link speed for network utilization %: `mbit`, `10mbit`, `100mbit`, `gbit`, `10gbit` or a number | gbit |
+| `--netlink <speed>` | Link speed for network utilization %: `mbit`, `10mbit`, `100mbit`, `gbit`, `10gbit` or a number of Mbit/s | gbit |
 | `--cpumode <n>` | CPU display mode: 0 = aggregate bar, 1 = per-core bars, 2 = off | 0 |
+| `--showcores` | Same as `--cpumode 1` | off |
 | `--showmem` | Show memory bars (RAM left, Swap right per host) | off |
 | `--shownet` | Show network bars (RX/TX across non-lo interfaces per host) | off |
-| `--extended` | Show extended display (1px peak line on CPU bars) | off |
+| `--extended` | Show extended display (1px peak line on CPU bars, utilization line on disk bars) | off |
+| `--showavgline` | Show the global CPU average line across all hosts | off |
+| `--showioavgline` | Show the global I/O (iowait+IRQ) average line across all hosts | off |
+| `--showseparators` | Show separator lines between hosts | off |
 | `--title <text>` | Set title bar text | (empty) |
 | `--sshopts <opts>` | Extra SSH options passed to `ssh` (e.g. `-o ConnectTimeout=5`) | (empty) |
-| `--hasagent` | SSH key is already loaded in agent (skip extra agent checks) | off |
+| `--hasagent` | Accepted for compatibility with older versions; has no effect | off |
 | `--showload` | Show load average bars (1-min teal fill, 5-min yellow line, 15-min white line per host) | off |
 | `--loadmax <n>` | Fix the load bar full-height reference to `n` (e.g. `8` = core count); 0 = auto-scale | 0 |
 | `--diskmode <n>` | Disk I/O display mode: 0=aggregate, 1=per-device, 2=off | 2 (off) |
 | `--diskmax <n>` | Fix the disk bar full-height reference to `n` bytes/sec; 0 = auto-scale | 0 |
+| `--diskaverage <n>` | Number of disk samples used for average | 10 |
 | `--maxbarsperrow <n>` | Max bars per row; 0 = unlimited (single row) | 0 |
 | `--help` | Show usage and exit | — |
 | `--version` | Print version and exit | — |
 
-Hosts can also be given as positional arguments: `loadbars server1 server2 --showcores 1`.
+Hosts can also be given as positional arguments, mixed freely with flags: `loadbars server1 server2 --showcores`.
+
+Boolean flags take no value (`--showmem`); use `--showmem=false` to switch off something enabled in `~/.loadbarsrc`.
 
 ### A few examples however
 
 ```bash
-loadbars --extended 1 --showcores 1 --height 300 --hosts localhost
+loadbars --extended --showcores --height 300 --hosts localhost
 
 loadbars --hosts localhost,server1.example.com,server2.example.com
 
@@ -104,7 +113,7 @@ loadbars --cluster foocluster (foocluster is in /etc/clusters [ClusterSSH])
 ```bash
 loadbars servername{01,02,03}.example.com
 
-loadbars servername{01..50}.example.com --showcores 1
+loadbars servername{01..50}.example.com --showcores
 ```
 
 
@@ -147,10 +156,10 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 | **e** | Toggle extended display (1px peak line on CPU bars: max system+user over last samples) |
 | **g** | Toggle global average CPU line (1px red line showing mean CPU usage across all hosts) |
 | **i** | Toggle global I/O average line (1px pink line showing mean iowait+IRQ across all hosts) |
-| **s** | Toggle host separator lines (1px yellow vertical line between hosts) |
+| **s** | Toggle host separator lines (1px red vertical line between hosts) |
 | **h** | Print hotkey list to stdout |
 | **q** | Quit |
-| **w** | Write current settings to ~/.loadbarsrc |
+| **w** | Write current settings (including the current window size) to ~/.loadbarsrc |
 | **a** | Increase CPU average samples (affects extended peak history length) |
 | **y** | Decrease CPU average samples (min 1) |
 | **d** | Increase net average samples |
@@ -163,18 +172,16 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 
 ### CPU stuff
 
-- `st` = Steal in % [see man proc] (extended), Color: Red
-- `gt` = Guest in % [see man proc] (extended), Color: Red
-- `sr` = Soft IRQ usage in % (extended), Color: White
-- `ir` = IRQ usage in % (extended), Color: White
-- `io` = IOwait cpu sage in %, Color: Purple
-- `id` = Idle cpu usage in % (extended), Color: Black
-- `ni` = Nice cpu usage in %, Color: Green
-- `us` = User cpu usage in %, Color: Yellow, dark yellow if to>50%, orange if to>50%
-- `sy` = System cpu sage in %, Color: Blue, lighter blue if >30%
-- `to` = Total CPU usage, which is (100% - id)
-- `pk` = Max us+sy peak of last avg. samples (extended)
-- 1px horizontal line: Maximum sy+us+io of last 'avg' samples (extended)
+Each CPU bar is a stack filled from the bottom (see the [usage guide](docs/usage-guide.md#2-cpu-bars) for pictures):
+
+- `sy` = System CPU usage in %, Color: Blue
+- `us` = User CPU usage in %, Color: Yellow
+- `ni` = Nice CPU usage in %, Color: Green (guest nice: lime green)
+- `id` = Idle CPU in %, Color: Black
+- `io` = IOwait CPU usage in %, Color: Purple
+- `ir`/`sr` = IRQ and soft IRQ usage in %, Color: White
+- `gt`/`st` = Guest and steal in % [see man proc], Color: Red
+- Extended mode (`e`): 1px horizontal line at the maximum `us`+`sy` of the last `cpuaverage` samples; yellow, dark yellow above 50%, orange above 70%
 
 ### Memory stuff
 
@@ -183,8 +190,8 @@ Press these keys while loadbars is running (see also `h` for a short list on std
 
 ### Network stuff
 
-- `Rxb` = Incoming (received) traffic in %, Color: Light green, normal green if >100% while using low netlink reference. Bar comes from top and is half width.
-- `Txb` = Outgoing (transmitted) traffic in %, Color: Light green, normal green if >100% while using low netlink reference. Bar comes from bottom and is half width.
+- `Rxb` = Incoming (received) traffic in % of the `netlink` reference, Color: Light green. Left half of the bar, grows down from the top.
+- `Txb` = Outgoing (transmitted) traffic in % of the `netlink` reference, Color: Light green. Right half of the bar, grows up from the bottom.
 
 When network bar is red: No non-loopback interface exists on the specific remote host.
 
@@ -201,8 +208,9 @@ When network bar is red: No non-loopback interface exists on the specific remote
 
 - **Purple fill** from top downward: read throughput as % of the peak/max reference.
 - **Darker purple fill** from bottom upward: write throughput as % of the peak/max reference.
+- Loop, ram, zram and device-mapper devices are ignored.
 - In **extended mode** (`e` key), a 3px light-red line shows disk utilization % (fraction of time the device had I/O in progress).
-- **Aggregate mode** (`5` key, first press): one bar per host summing all whole-disk devices. Partitions (`sda1`, `nvme0n1p1`), loop, ram, and device-mapper devices are excluded.
+- **Aggregate mode** (`5` key, first press): one bar per host summing all whole-disk devices. Partitions (`sda1`, `nvme0n1p1`) are excluded.
 - **Per-device mode** (`5` key, second press): one bar per whole-disk device per host.
 - **Scale reference**: auto-scales based on observed peak throughput (floor 1 MB/s), or fixed via `diskmax=N` (bytes/sec).
 - **Config keys**: `diskmode` (0/1/2), `diskmax` (bytes/sec), `diskaverage` (smoothing samples).

@@ -7,7 +7,7 @@ This file helps AI assistants (Cursor, Claude, etc.) work effectively in this re
 **Loadbars** is a real-time server load monitoring tool. It connects to one or more hosts via SSH (or runs locally) and shows CPU, memory, and network usage as vertical colored bars in an SDL window. It does not record or graph history; it shows current state only (like `top` or `vmstat`).
 
 - **Repo:** github.com/snonux/loadbars  
-- **Display:** SDL2 (go-sdl2). No in-window text/fonts; all bars are drawn with filled rectangles. User feedback (hotkeys, which interface, etc.) is printed to stdout.
+- **Display:** SDL2 (go-sdl2). All bars are drawn with filled rectangles; the only in-window text is the hover tooltip, drawn with a small built-in bitmap font (`internal/display/font.go`). Other user feedback (hotkeys, toggles, errors) is printed to stdout.
 
 ## Tech stack
 
@@ -51,7 +51,7 @@ Default when no hosts are given: `localhost`. No SSH required for local use.
 ## Display and hotkeys
 
 - **Display** (`internal/display`): One loop – poll events, snapshot from store, count bars, clear only when layout/size changes, draw CPU then mem then net per host, present. Bar width = `winW / numBars`; no gap between bars (avoids 1px artifacts). When `maxbarsperrow` is set, bars wrap into multiple rows of equal height; the last row may have fewer (wider) bars.
-- **Hotkeys:** 1=cores, 2=mem, 3=net, e=extended (peak line), h=help, q=quit, w=write config, a/y=cpu avg, d/c=net avg, f/v=link scale, arrows=resize. See README "Hotkeys" table.
+- **Hotkeys:** 1=cpu mode, 2/m=mem, 3/n=net, 4/l=load, 5=disk mode, r=reset auto-scale, e=extended, g=avg line, i=io avg line, s=separators, h=help, q=quit, w=write config, a/y=cpu avg, d/c=net avg, b/x=disk avg, f/v=link scale, arrows=resize. See README "Hotkeys" table.
 
 Network bars aggregate RX/TX across all non-`lo` interfaces per host. Link speed is set via `netlink` config or `--netlink` flag.
 
@@ -60,7 +60,7 @@ Network bars aggregate RX/TX across all non-`lo` interfaces per host. Link speed
 - Prefer the existing `internal/*` package layout; avoid adding new toplevel Go packages unless necessary.
 - Version is the single source in `internal/version/version.go`.
 - Config keys are lowercase in `~/.loadbarsrc` (e.g. `netlink=gbit`, `maxbarsperrow=4`).
-- No text/font rendering in the SDL window in the current design; keep feedback on stdout unless the user explicitly asks for in-window labels.
+- Apart from the hover tooltip, no text in the SDL window; keep feedback on stdout unless the user explicitly asks for in-window labels.
 
 ## Testing
 
@@ -91,4 +91,5 @@ Loadbars supports macOS as a client to monitor remote Linux servers via SSH.
 ## Useful references
 
 - **README.md** – User-facing usage, hotkeys, config, network interface.
+- **docs/usage-guide.md** – Feature-by-feature guide with GIFs in `docs/img/`, recorded by `scripts/record-guide-gifs.py` using the fake fleet in `scripts/demo/ssh`. Re-record the affected GIFs when the display changes.
 - **CLAUDE.md** – Points to this file.

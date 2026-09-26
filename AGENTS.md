@@ -51,7 +51,7 @@ Default when no hosts are given: `localhost`. No SSH required for local use.
 ## Display and hotkeys
 
 - **Display** (`internal/display`): One loop – poll events, snapshot from store, count bars, clear only when layout/size changes, draw CPU then mem then net per host, present. Bar width = `winW / numBars`; no gap between bars (avoids 1px artifacts). When `maxbarsperrow` is set, bars wrap into multiple rows of equal height; the last row may have fewer (wider) bars.
-- **Hotkeys:** 1=cpu mode, 2/m=mem, 3/n=net, 4/l=load, 5=disk mode, r=reset auto-scale, e=extended, g=avg line, i=io avg line, s=separators, h=help, q=quit, w=write config, a/y=cpu avg, d/c=net avg, b/x=disk avg, f/v=link scale, arrows=resize. See README "Hotkeys" table.
+- **Hotkeys:** 1=cpu mode, 2/m=mem, 3/n=net, 4/l=load, 5=disk mode, r=reset auto-scale, e=extended, g=avg line, i=io avg line, s=separators, h=help, q=quit, w=write config, a/y=cpu avg, d/c=net avg, b/x=disk avg, f/v=link scale, arrows=resize. See the hotkey table in docs/usage-guide.md.
 
 Network bars aggregate RX/TX across all non-`lo` interfaces per host. Link speed is set via `netlink` config or `--netlink` flag.
 
@@ -90,6 +90,6 @@ Loadbars supports macOS as a client to monitor remote Linux servers via SSH.
 
 ## Useful references
 
-- **README.md** – User-facing usage, hotkeys, config, network interface.
+- **README.md** – Short intro, build instructions and a few examples; links to the guide.
 - **docs/usage-guide.md** – Feature-by-feature guide with GIFs in `docs/img/`, recorded by `scripts/record-guide-gifs.py` using the fake fleet in `scripts/demo/ssh`. Re-record the affected GIFs when the display changes.
 - **CLAUDE.md** – Points to this file.

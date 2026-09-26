@@ -118,15 +118,15 @@ func TestParseLoadAvg(t *testing.T) {
 
 func TestParseDiskLine(t *testing.T) {
 	tests := []struct {
-		name         string
-		line         string
-		wantDevice   string
-		wantSR       int64
-		wantSW       int64
-		wantRT       int64
-		wantWT       int64
-		wantIO       int64
-		wantErr      bool
+		name       string
+		line       string
+		wantDevice string
+		wantSR     int64
+		wantSW     int64
+		wantRT     int64
+		wantWT     int64
+		wantIO     int64
+		wantErr    bool
 	}{
 		{"full", "sda:rs=1000;ws=2000;rt=50;wt=100;io=120", "sda", 1000, 2000, 50, 100, 120, false},
 		{"nvme", "nvme0n1:rs=500;ws=300;rt=10;wt=20;io=30", "nvme0n1", 500, 300, 10, 20, 30, false},

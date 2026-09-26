@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -40,13 +41,21 @@ func Run(cfg *config.Config) error {
 func runCollectorLoop(ctx context.Context, host string, cfg *config.Config, store *Store) {
 	backoff := time.Second
 	for {
+		started := time.Now()
 		err := collector.Run(ctx, host, cfg, store)
-		if err == nil || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return
+		}
+		if err == nil {
+			// The stream ended cleanly, e.g. the SSH connection dropped: reconnect too.
+			err = errors.New("connection closed")
 		}
 		fmt.Fprintf(os.Stderr, "!!! collector %s failed: %v\n", host, err)
 		if !isRemoteHost(host) {
 			return
+		}
+		if time.Since(started) > time.Minute {
+			backoff = time.Second // the connection was healthy for a while; retry quickly
 		}
 		timer := time.NewTimer(backoff)
 		select {

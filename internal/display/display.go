@@ -343,6 +343,9 @@ func handleAdjustAndSave(sym sdl.Keycode, cfg *config.Config, state *runState) {
 		cfg.ShowSeparators = state.showSeparators
 		cfg.DiskMode = state.diskMode
 		cfg.Extended = state.extended
+		// Keep a window resized with the arrow keys or the mouse at its new size.
+		cfg.BarWidth = int(state.winW)
+		cfg.Height = int(state.winH)
 		if err := cfg.Write(); err != nil {
 			fmt.Fprintf(os.Stderr, "!!! Write config: %v\n", err)
 		} else {

@@ -1843,6 +1843,24 @@ func TestHandleKey_WriteConfig_Disk(t *testing.T) {
 	}
 }
 
+func TestHandleKey_WriteConfig_WindowSize(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	cfg := defaultTestConfig()
+	state := newRunState(cfg, 200, 100)
+	// Simulate a resize with the arrow keys or the mouse.
+	state.winW, state.winH = 1300, 250
+
+	handleKey(sdl.K_w, nil, cfg, state)
+
+	if cfg.BarWidth != 1300 || cfg.Height != 250 {
+		t.Errorf("expected window size 1300x250 in config after 'w', got %dx%d", cfg.BarWidth, cfg.Height)
+	}
+}
+
 func TestCountBars_WithDisk(t *testing.T) {
 	snap := map[string]*stats.HostStats{
 		"host1": {

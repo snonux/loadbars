@@ -23,14 +23,14 @@ Remote hosts do not need Go: the client embeds the remote script in the binary a
 cmd/loadbars/          # Entry point: flags, config load, app.Run()
 internal/
   app/                 # App lifecycle, store, wires collector + display
-  collector/           # Runs embedded script (local or ssh via bash -s), parses M LOADAVG / M MEMSTATS / M NETSTATS / M CPUSTATS
+  collector/           # Runs embedded script (local or ssh via bash -s), parses M LOADAVG / M MEMSTATS / M NETSTATS / M DISKSTATS / M CPUSTATS
   config/              # Config struct, ~/.loadbarsrc load/save, cluster from /etc/clusters
   constants/           # Intervals, colors (RGB), link-speed constants
   display/             # SDL window, event loop, drawing (CPU/mem/net bars, hotkeys)
   stats/               # HostStats, Snapshot, NetStamp; read by display
   version/             # Version string (e.g. "0.8.0") – used in title bar and --version
 scripts/
-  loadbars-remote.sh   # Source copy; embedded into binary at build (internal/collector/scriptdata/)
+  loadbars-remote.sh   # Copy for reference; the binary embeds internal/collector/loadbars-remote.sh (go:embed in script.go)
 ```
 
 - **Version:** Set in `internal/version/version.go`. Shown in window title and `--version`.
@@ -50,7 +50,7 @@ Default when no hosts are given: `localhost`. No SSH required for local use.
 
 ## Display and hotkeys
 
-- **Display** (`internal/display`): One loop – poll events, snapshot from store, count bars, clear only when layout/size changes, draw CPU then mem then net per host, present. Bar width = `winW / numBars`; no gap between bars (avoids 1px artifacts). When `maxbarsperrow` is set, bars wrap into multiple rows of equal height; the last row may have fewer (wider) bars.
+- **Display** (`internal/display`): One loop – poll events, snapshot from store, count bars, clear the whole window, draw CPU then mem, net, load and disk per host, present. Bar width = `winW / numBars`; no gap between bars (avoids 1px artifacts). When `maxbarsperrow` is set, bars wrap into multiple rows of equal height; the last row may have fewer (wider) bars.
 - **Hotkeys:** 1=cpu mode, 2/m=mem, 3/n=net, 4/l=load, 5=disk mode, r=reset auto-scale, e=extended, g=avg line, i=io avg line, s=separators, h=help, q=quit, w=write config, a/y=cpu avg, d/c=net avg, b/x=disk avg, f/v=link scale, arrows=resize. See the hotkey table in docs/usage-guide.md.
 
 Network bars aggregate RX/TX across all non-`lo` interfaces per host. Link speed is set via `netlink` config or `--netlink` flag.
@@ -78,7 +78,7 @@ Loadbars supports macOS as a client to monitor remote Linux servers via SSH.
 
 ### Key files
 
-- `internal/collector/script.go` - Embeds the Linux monitoring script
+- `internal/collector/script.go` - Embeds the Linux monitoring script (`internal/collector/loadbars-remote.sh`)
 - `internal/collector/collector.go` - Runs Linux script locally or over SSH; exits with error if local system lacks /proc
 - `internal/display/activate_darwin.go` - macOS-specific activation using `open -a`
 - `internal/display/activate.go` - No-op for other platforms

@@ -197,12 +197,12 @@ What to show:
 
 Scaling and smoothing:
   --netlink <speed>       Link speed for net %% (mbit, 10mbit, 100mbit, gbit,
-                          10gbit or bytes/sec). Default: gbit
+                          10gbit or a number of Mbit/s). Default: gbit
   --loadmax <n>           Fixed full-height load value (0 = auto-scale)
   --diskmax <n>           Fixed full-height disk bytes/sec (0 = auto-scale)
-  --cpuaverage <n>        CPU samples to average (default 10)
-  --netaverage <n>        Net samples to average (default 15)
-  --diskaverage <n>       Disk samples to average (default 10)
+  --cpuaverage <n>        CPU samples kept for the peak line (default 10)
+  --netaverage <n>        Net sample count, currently unused (default 15)
+  --diskaverage <n>       Disk sample count, currently unused (default 10)
 
 Window:
   --barwidth <n>          Initial window width (default 1200, min 800)

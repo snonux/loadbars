@@ -1,5 +1,5 @@
 #!/bin/bash
-# loadbars-remote.sh - Emits loadbars protocol (M LOADAVG, M MEMSTATS, M NETSTATS, M CPUSTATS)
+# loadbars-remote.sh - Emits loadbars protocol (M LOADAVG, M MEMSTATS, M NETSTATS, M DISKSTATS, M CPUSTATS)
 # for local or remote execution. No Perl required.
 # Usage: bash loadbars-remote.sh
 # Interval for CPU sampling (seconds)

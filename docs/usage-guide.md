@@ -104,8 +104,8 @@ times and the peak lines start to hug the bars.
 
 All bars glide smoothly to each new value instead of jumping; that smoothing is
 built in and not adjustable. The `d` / `c` (`--netaverage`) and `b` / `x`
-(`--diskaverage`) keys change the network and disk sample counts, which are
-saved with `w` but currently have no visible effect.
+(`--diskaverage`) keys are kept for compatibility with older versions and
+currently change nothing on screen, so you can ignore them.
 
 In extended mode disk bars also get a utilisation line
 ([section 7](#7-disk-io)).
@@ -138,7 +138,8 @@ Both are a percentage of a link speed reference, 1 Gbit/s by default. A full
 half means the host is sending or receiving at the reference speed. Set the
 reference to what your servers have with `--netlink` (`mbit`, `10mbit`,
 `100mbit`, `gbit`, `10gbit`, or a number of Mbit/s such as `2500`), or step
-through those five speeds live with `f` (faster) and `v` (slower). The GIF drops the reference to 100 Mbit/s with
+through those five speeds live with `f` (faster) and `v` (slower); a custom
+number is replaced by one of the five as soon as you press `f` or `v`. The GIF drops the reference to 100 Mbit/s with
 `v` and the same traffic now fills the bars.
 
 A bar that is completely red means the host has no network interface other
@@ -178,9 +179,11 @@ Press `5` (or `--diskmode 0`) to add disk I/O bars. Pressing `5` cycles through:
 
 An idle disk bar is a dim purple, so you can tell it apart from the black
 background. Reads fill from the top (purple) and writes from the bottom (dark
-purple); each can take up at most half of the bar. Partitions, loop, ram, zram
+purple). The full bar height stands for the scale described below, and reads
+and writes get half of it each, so a half is full once that direction reaches
+half the scale. Partitions, loop, ram, zram
 and device-mapper devices are ignored so nothing is counted twice. In extended
-mode (`e`) a light red line shows utilisation, the share of time the disk was
+mode (`e`) a thick light red line shows utilisation, the share of time the disk was
 busy: it moves down from the top, from 0% at the top to 100% at the bottom.
 
 The scale adapts to the highest read+write throughput seen on any disk (at
@@ -200,7 +203,7 @@ belongs to:
 | Bar | Tooltip |
 |-----|---------|
 | CPU | host and core, then system, user, nice, iowait, steal and idle % |
-| Memory | RAM and swap used / total, in GB and % |
+| Memory | RAM and swap used / total (in K, M or G) and % |
 | Network | RX and TX as % of the link reference, and the reference |
 | Load | 1, 5 and 15-minute load and the current scale |
 | Disk | device (`all` in aggregate mode), read and write MB/s and the current scale |
@@ -217,7 +220,7 @@ opens one SSH connection per host and puts them next to each other:
 ```bash
 loadbars --hosts web01,web02,db01
 loadbars web01 web02 db01 --showmem        # hosts as arguments
-loadbars root@web01,deploy@db01            # a different user per host
+loadbars root@web01 deploy@db01            # a different user per host
 loadbars web{01..12}.example.com           # shell brace expansion
 loadbars --cluster production              # hosts from /etc/clusters
 ```
@@ -230,10 +233,13 @@ need bash and Linux. SSH must work without a password prompt (key in
 `~/.ssh/authorized_keys`, agent running). Loadbars passes
 `-o StrictHostKeyChecking=no`, so the key of a host you have never connected to
 is accepted without asking. Extra SSH options go in `--sshopts`,
-for example `--sshopts "-o ConnectTimeout=5 -p 2222"`; everything in
+for example `--sshopts "-o ConnectTimeout=5 -p 2222"` (the options are split at
+spaces, so values that contain spaces or quotes do not work there); everything in
 `~/.ssh/config` (jump hosts, ports, users) applies too. If a connection fails
 or drops, loadbars reconnects with a backoff of up to 30 seconds and prints the
-error to the terminal.
+error to the terminal. A host only gets bars once it has sent data, so a host
+that cannot be reached is simply missing from the window; check the terminal
+for its error.
 
 **Clusters.** `--cluster <name>` reads a ClusterSSH-style `/etc/clusters` file,
 where each line is a cluster name followed by hosts or other cluster names
@@ -251,7 +257,8 @@ help when there are many of them:
 
 * `s` (or `--showseparators`) draws a red line between hosts.
 * `g` (or `--showavgline`) draws a red horizontal line at the average CPU usage
-  of all hosts, so the hosts above the fleet average stand out.
+  (everything except idle) of all hosts, so the hosts above the fleet average
+  stand out. Like the pink line below, it needs the CPU bars to be on.
 * `i` (or `--showioavgline`) draws a pink line at the average iowait+IRQ of all
   hosts. It is measured from the top of the window, like the purple and white
   segments of the CPU bars it summarises.
@@ -284,10 +291,11 @@ hosts at a time.
 
 ![Resizing with the arrow keys](img/window.gif)
 
-The window starts `--barwidth` pixels wide (default 1200, at least 800) and
+The window starts `--barwidth` pixels wide (despite the name, this is the width
+of the whole window: default 1200, at least 800 and at most `--maxwidth`) and
 `--height` pixels high (default 150). Resize it with the mouse or the arrow
-keys: right/left make it 100px wider/narrower (up to `--maxwidth`, default
-1900), down/up make it 100px taller/shorter.
+keys: → makes it 100px wider (up to `--maxwidth`, default 1900), ← narrower,
+↓ taller and ↑ shorter.
 
 Every option can also live in `~/.loadbarsrc`, one `key=value` per line,
 without the leading `--`, `#` starts a comment. Command-line flags override the
@@ -360,7 +368,7 @@ file use `1` or `0` (`true`/`yes` work too).
 | `--cpuaverage <n>` | 10 | CPU samples kept for the peak line |
 | `--netaverage <n>` | 15 | Network sample count (no visible effect yet) |
 | `--diskaverage <n>` | 10 | Disk sample count (no visible effect yet) |
-| `--barwidth <n>` | 1200 | Initial window width (min 800) |
+| `--barwidth <n>` | 1200 | Initial width of the whole window (800 to `--maxwidth`) |
 | `--height <n>` | 150 | Window height |
 | `--maxwidth <n>` | 1900 | Maximum window width |
 | `--maxbarsperrow <n>` | 0 | Wrap into rows of n bars (0 = one row) |

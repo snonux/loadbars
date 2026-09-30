@@ -661,7 +661,7 @@ func sortedHosts(snap map[string]*stats.HostStats) []string {
 }
 
 func printHotkeys() {
-	fmt.Println("=> Hotkeys: 1=cores 2/m=mem 3/n=net 4/l=load 5=disk r=reset load/disk peak e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg b/x=disk avg f/v=link scale arrows=resize")
+	fmt.Println("=> Hotkeys: 1=cpu mode 2/m=mem 3/n=net 4/l=load 5=disk r=reset load/disk peak e=extended g=avg line i=io avg s=separators h=help q=quit w=write config a/y=cpu avg d/c=net avg b/x=disk avg f/v=link scale arrows=resize")
 }
 
 // scaleLinkUp moves cfg.NetLink to the next higher link speed in linkScales.

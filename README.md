@@ -2,7 +2,7 @@
 
 ## Description
 
-Loadbars is a tool that can be used to observe CPU loads of several remote servers at once in real time. It connects with SSH (using SSH public/private key auth) to several servers at once and vizualizes all server CPUs and memory statistics right next each other (either summarized or each core separately). Loadbars is not a tool for collecting CPU loads and drawing graphs for later analysis. However, since such tools require a significant amount of time before producing results, Loadbars lets you observe the current state immediately. Loadbars does not remember or record any load information. It just shows the current CPU usages like top or vmstat does.
+Loadbars shows the CPU, memory, network, load average and disk I/O of one or many Linux servers in real time, as coloured bars side by side in a small window. It connects to the servers over SSH (public key authentication) or monitors the local machine directly, and can show each CPU summarised or core by core. Loadbars does not record anything or draw graphs for later analysis; like `top` or `vmstat`, it shows what is happening right now, and it shows it immediately.
 
 ![Loadbars](loadbars.gif)
 

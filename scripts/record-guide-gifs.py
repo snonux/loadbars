@@ -59,7 +59,8 @@ class Scene:
     command: str = ""  # shown in the top strip; defaults to "loadbars <args>"
     capture: tuple = None  # (w, h) to record instead of the window size
     cursor: bool = False
-    warmup: float = 3.0  # seconds before recording starts (bars settle)
+    warmup: float = 4.0  # seconds before recording starts (bars settle, and longer than
+    #                      the 3 s tooltip timeout so no stray tooltip is recorded)
     load: int = 0  # local busy processes already running when recording starts
 
 
@@ -103,7 +104,7 @@ SCENES = [
     ),
     Scene(
         "network",
-        ["--hosts", "backup01,cache01,web01", "--netaverage", "5", "--barwidth", "900", "--height", "160"],
+        ["--hosts", "backup01,cache01,web01", "--barwidth", "900", "--height", "160"],
         20,
         [(2.5, "key", "3", "Key 3 (or n): RX from the top, TX from the bottom"),
          (11, "key", "v", "Key v: lower link reference (gbit -> 100mbit), bars saturate"),
@@ -304,7 +305,7 @@ def to_gif(scene, raw, w, h, out):
     for start, end, text in captions(scene):
         filters.append(
             f"drawtext=fontfile={FONT}:text='{escape(text)}':x=8:y={h + STRIP}+({STRIP}-th)/2:"
-            f"fontsize=15:fontcolor=white:enable='between(t,{start},{end})'")
+            f"fontsize=15:fontcolor=white:enable='gte(t,{start})*lt(t,{end})'")
     chain = ",".join(filters)
     palette = raw.with_suffix(".png")
     run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(raw),
